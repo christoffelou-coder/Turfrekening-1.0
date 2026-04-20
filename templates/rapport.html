@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Maandrapport{% endblock %}
+{% block head %}
+<style>
+  @media print {
+    nav, .no-print { display: none !important; }
+    body { background: white !important; color: black !important; }
+    .print-card { border: 1px solid #ccc !important; background: white !important; }
+    .text-white, .text-gray-400, .text-gray-300 { color: black !important; }
+    .text-amber-400 { color: #b45309 !important; }
+    .text-green-400 { color: #166534 !important; }
+    .text-red-400 { color: #991b1b !important; }
+    .bg-gray-800, .bg-gray-900, .bg-gray-950 { background: white !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6">
+
+  <!-- Header + periode kiezer -->
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-6 no-print">
+    <h1 class="text-2xl font-bold text-amber-400">📊 Maandrapport</h1>
+    <div class="flex items-center gap-3">
+      <select onchange="window.location='/rapport/'+this.value"
+        class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+        {% for p in periods %}
+        <option value="{{ p.id }}" {% if p.id == current_period_id %}selected{% endif %}>
+          {{ p.name }} {% if p.is_active %}(actief){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <button onclick="window.print()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm btn-press">
+        🖨 Afdrukken
+      </button>
+    </div>
+  </div>
+
+  {% if not overview %}
+  <div class="bg-red-900/40 border border-red-700 rounded-xl p-6 text-center">
+    <p class="text-red-300 text-lg">Geen data gevonden.</p>
+    <a href="/admin/periods" class="text-amber-400 underline text-sm">Maak een periode aan</a>
+  </div>
+  {% else %}
+
+  {% set ov = overview %}
+
+  <!-- Periodeheader -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6 print-card">
+    <div class="flex flex-wrap gap-6">
+      <div>
+        <div class="text-xs text-gray-400 uppercase tracking-wider">Periode</div>
+        <div class="text-xl font-bold">{{ ov.period.name }}</div>
+        <div class="text-sm text-gray-400">
+          {{ ov.period.start_date.strftime('%d %b %Y') }}
+          {% if ov.period.end_date %} → {{ ov.period.end_date.strftime('%d %b %Y') }}{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 uppercase tracking-wider">Personen</div>
+        <div class="text-xl font-bold">{{ ov.active_count }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 uppercase tracking-wider">Totaal geturfd</div>
+        <div class="text-xl font-bold text-amber-400">
+          €{{ '%.2f'|format(ov.user_rows|sum(attribute='geturfd'))|replace('.', ',') }}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 uppercase tracking-wider">Totaal HO</div>
+        <div class="text-xl font-bold text-red-400">€{{ '%.2f'|format(ov.total_ho)|replace('.', ',') }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 uppercase tracking-wider">HO p/p (gelijk)</div>
+        <div class="text-xl font-bold text-orange-400">€{{ '%.2f'|format(ov.ho_per_person)|replace('.', ',') }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Hoofdoverzicht per persoon ─────────────────────────────── -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6 print-card">
+    <h2 class="font-bold text-lg mb-3">Overzicht per persoon</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-gray-400 text-xs border-b border-gray-700">
+            <th class="text-left py-2">Naam</th>
+            <th class="text-right py-2">Vorige stand</th>
+            <th class="text-right py-2">Overgemaakt</th>
+            <th class="text-right py-2">Geturfd</th>
+            <th class="text-right py-2">HO</th>
+            <th class="text-right py-2">Correctie</th>
+            <th class="text-right py-2 font-bold text-white">Stand</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in ov.user_rows %}
+          <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+            <td class="py-2 font-semibold">{{ row.user.name }}</td>
+            <td class="py-2 text-right text-gray-400">
+              {% if row.vorige_stand != 0 %}
+              <span class="{% if row.vorige_stand >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ '+' if row.vorige_stand >= 0 else '' }}€{{ '%.2f'|format(row.vorige_stand)|replace('.', ',') }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="py-2 text-right text-green-400 font-semibold">
+              {% if row.overgemaakt > 0 %}€{{ '%.2f'|format(row.overgemaakt)|replace('.', ',') }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 text-right text-amber-400">
+              {% if row.geturfd > 0 %}−€{{ '%.2f'|format(row.geturfd)|replace('.', ',') }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 text-right text-orange-400">
+              {% if row.ho > 0 %}−€{{ '%.2f'|format(row.ho)|replace('.', ',') }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 text-right">
+              {% if row.correctie != 0 %}
+              <span class="{% if row.correctie >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ '+' if row.correctie >= 0 else '' }}€{{ '%.2f'|format(row.correctie)|replace('.', ',') }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="py-2 text-right font-bold text-base">
+              <span class="{% if row.stand >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ '+' if row.stand >= 0 else '' }}€{{ '%.2f'|format(row.stand)|replace('.', ',') }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-gray-600 text-xs text-gray-400">
+            <td class="py-2">Totaal</td>
+            <td class="py-2 text-right">—</td>
+            <td class="py-2 text-right text-green-400">€{{ '%.2f'|format(ov.user_rows|sum(attribute='overgemaakt'))|replace('.', ',') }}</td>
+            <td class="py-2 text-right text-amber-400">−€{{ '%.2f'|format(ov.user_rows|sum(attribute='geturfd'))|replace('.', ',') }}</td>
+            <td class="py-2 text-right text-orange-400">−€{{ '%.2f'|format(ov.user_rows|sum(attribute='ho'))|replace('.', ',') }}</td>
+            <td class="py-2 text-right">—</td>
+            <td class="py-2 text-right font-bold text-white">
+              {% set total_stand = ov.user_rows|sum(attribute='stand') %}
+              <span class="{% if total_stand >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ '+' if total_stand >= 0 else '' }}€{{ '%.2f'|format(total_stand)|replace('.', ',') }}
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Turfjes per product per persoon ───────────────────────── -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6 print-card">
+    <h2 class="font-bold text-lg mb-3">Turfjes detail</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-gray-400 text-xs border-b border-gray-700">
+            <th class="text-left py-2 sticky left-0 bg-gray-800">Naam</th>
+            {% for product in ov.products %}
+            <th class="text-right py-2 px-2">{{ product.emoji }}<br/>{{ product.name }}</th>
+            {% endfor %}
+            <th class="text-right py-2 font-bold text-white">Totaal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set product_totals = {} %}
+          {% for row in ov.user_rows %}
+          <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+            <td class="py-2 font-semibold sticky left-0 bg-gray-800">{{ row.user.name }}</td>
+            {% for product in ov.products %}
+            {% set qty = row.tallies_per_product.get(product.id, 0) %}
+            <td class="py-2 text-right px-2">
+              {% if qty > 0 %}<span class="text-amber-400 font-semibold">{{ qty }}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}
+            </td>
+            {% endfor %}
+            <td class="py-2 text-right font-bold text-amber-400 px-2">
+              €{{ '%.2f'|format(row.geturfd)|replace('.', ',') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-gray-600 text-xs font-semibold text-gray-300">
+            <td class="py-2">Totaal</td>
+            {% for product in ov.products %}
+            {% set total_qty = namespace(v=0) %}
+            {% for row in ov.user_rows %}{% set total_qty.v = total_qty.v + row.tallies_per_product.get(product.id, 0) %}{% endfor %}
+            <td class="py-2 text-right px-2 text-amber-400">{{ total_qty.v if total_qty.v > 0 else '—' }}</td>
+            {% endfor %}
+            <td class="py-2 text-right text-amber-400">€{{ '%.2f'|format(ov.user_rows|sum(attribute='geturfd'))|replace('.', ',') }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Voorraad & turfverlies ────────────────────────────────── -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6 print-card">
+    <h2 class="font-bold text-lg mb-3">Voorraadoverzicht</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-gray-400 text-xs border-b border-gray-700">
+          <th class="text-left py-2">Product</th>
+          <th class="text-right py-2">Prijs</th>
+          <th class="text-right py-2">Begin</th>
+          <th class="text-right py-2">Bijgestockt</th>
+          <th class="text-right py-2">Eindstand</th>
+          <th class="text-right py-2">Gebruikt</th>
+          <th class="text-right py-2">Geturfd</th>
+          <th class="text-right py-2 text-red-400">Verlies (st)</th>
+          <th class="text-right py-2 text-red-400">Verlies (€)</th>
+        </tr></thead>
+        <tbody>
+          {% for row in ov.inventory %}
+          <tr class="border-b border-gray-700/50">
+            <td class="py-2">{{ row.product.emoji }} {{ row.product.name }}</td>
+            <td class="py-2 text-right text-gray-400">€{{ '%.2f'|format(row.product.price)|replace('.', ',') }}</td>
+            <td class="py-2 text-right text-gray-400">{{ row.stock_begin }}</td>
+            <td class="py-2 text-right text-green-400">+{{ row.bijstock }}</td>
+            <td class="py-2 text-right text-gray-400">{{ row.stock_eind }}</td>
+            <td class="py-2 text-right">{{ row.gebruikt }}</td>
+            <td class="py-2 text-right text-amber-400">{{ row.geturfd }}</td>
+            <td class="py-2 text-right {% if row.turfverlies_qty > 0 %}text-red-400{% else %}text-gray-600{% endif %}">
+              {{ row.turfverlies_qty if row.turfverlies_qty > 0 else '—' }}
+            </td>
+            <td class="py-2 text-right {% if row.turfverlies_eur > 0 %}text-red-400 font-semibold{% else %}text-gray-600{% endif %}">
+              {% if row.turfverlies_eur > 0 %}€{{ '%.2f'|format(row.turfverlies_eur)|replace('.', ',') }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr class="border-t border-gray-600 font-semibold">
+          <td colspan="8" class="py-2 text-red-400">Totaal turfverlies</td>
+          <td class="py-2 text-right text-red-400">€{{ '%.2f'|format(ov.turfverlies_total)|replace('.', ',') }}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── HO breakdown ─────────────────────────────────────────── -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 print-card">
+    <h2 class="font-bold text-lg mb-3">HO Overzicht</h2>
+    <table class="w-full text-sm mb-3">
+      <tr class="border-b border-gray-700">
+        <td class="py-2 text-gray-400">Turfverlies</td>
+        <td class="py-2 text-right text-red-400 font-semibold">€{{ '%.2f'|format(ov.turfverlies_total)|replace('.', ',') }}</td>
+      </tr>
+      {% for event in ov.ho_events %}
+      <tr class="border-b border-gray-700/50">
+        <td class="py-2 text-gray-300">
+          {{ event.name }}
+          <span class="text-xs text-gray-500 ml-1">({{ event.date.strftime('%d-%m') }})</span>
+          {% if event.notes %}<span class="text-xs text-gray-500"> · {{ event.notes }}</span>{% endif %}
+        </td>
+        <td class="py-2 text-right text-orange-400 font-semibold">€{{ '%.2f'|format(event.total_cost)|replace('.', ',') }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="border-t-2 border-gray-600 font-bold">
+        <td class="py-2">Totaal HO</td>
+        <td class="py-2 text-right text-amber-400">€{{ '%.2f'|format(ov.total_ho)|replace('.', ',') }}</td>
+      </tr>
+      <tr>
+        <td class="py-1 text-gray-400 text-xs">÷ {{ ov.active_count }} personen</td>
+        <td class="py-1 text-right text-amber-400 font-bold">€{{ '%.2f'|format(ov.ho_per_person)|replace('.', ',') }} p/p</td>
+      </tr>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>{% block title %}Turfrekening{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            amber: {
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .btn-press { transition: transform 0.08s, opacity 0.08s; }
+    .btn-press:active { transform: scale(0.94); opacity: 0.85; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+
+  <!-- Navigatiebalk (verborgen op turfscherm) -->
+  {% block nav %}
+  <nav class="bg-gray-900 border-b border-gray-700 px-4 py-3 flex items-center gap-4">
+    <a href="/" class="text-amber-400 font-bold text-lg">🍺 Turfrekening</a>
+    <div class="flex gap-2 ml-auto text-sm">
+      <a href="/" class="px-3 py-1.5 rounded-lg hover:bg-gray-700 transition {% if request.path == '/' %}bg-gray-700{% endif %}">Turfen</a>
+      <a href="/rapport" class="px-3 py-1.5 rounded-lg hover:bg-gray-700 transition {% if '/rapport' in request.path %}bg-gray-700{% endif %}">Rapport</a>
+      <a href="/ho" class="px-3 py-1.5 rounded-lg hover:bg-gray-700 transition {% if request.path == '/ho' %}bg-gray-700{% endif %}">HO</a>
+      <a href="/admin" class="px-3 py-1.5 rounded-lg hover:bg-gray-700 transition {% if '/admin' in request.path %}bg-gray-700{% endif %}">Admin</a>
+    </div>
+  </nav>
+  {% endblock %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

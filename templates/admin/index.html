@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-6">
+  <h1 class="text-2xl font-bold mb-6 text-amber-400">⚙ Admin</h1>
+
+  {% if period %}
+  <div class="bg-gray-800 rounded-xl p-4 mb-6 border border-gray-700">
+    <div class="text-sm text-gray-400">Actieve periode</div>
+    <div class="text-lg font-bold">{{ period.name }}</div>
+    <div class="text-sm text-gray-400">Gestart: {{ period.start_date.strftime('%d %b %Y') }}</div>
+  </div>
+  {% else %}
+  <div class="bg-red-900/40 border border-red-700 rounded-xl p-4 mb-6">
+    <p class="text-red-300 font-semibold">Geen actieve periode!</p>
+    <a href="/admin/periods" class="text-amber-400 text-sm underline">Maak een periode aan →</a>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+    <a href="/admin/users" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">👥</div>
+      <div class="font-bold">Gebruikers</div>
+      <div class="text-gray-400 text-sm">{{ users|selectattr('is_active')|list|length }} actief</div>
+    </a>
+    <a href="/admin/products" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">📦</div>
+      <div class="font-bold">Producten</div>
+      <div class="text-gray-400 text-sm">{{ products|selectattr('is_active')|list|length }} actief</div>
+    </a>
+    <a href="/admin/inventory" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">🏪</div>
+      <div class="font-bold">Voorraad</div>
+      <div class="text-gray-400 text-sm">Begin/eind + inkoop</div>
+    </a>
+    <a href="/admin/payments" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">💸</div>
+      <div class="font-bold">Overboekingen</div>
+      <div class="text-gray-400 text-sm">Betalingen bijhouden</div>
+    </a>
+    <a href="/admin/corrections" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">✏️</div>
+      <div class="font-bold">Correcties</div>
+      <div class="text-gray-400 text-sm">Handmatige aanpassingen</div>
+    </a>
+    <a href="/admin/periods" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">📅</div>
+      <div class="font-bold">Periodes</div>
+      <div class="text-gray-400 text-sm">{{ periods|length }} periodes</div>
+    </a>
+    <a href="/ho" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">🏠</div>
+      <div class="font-bold">HO Beheer</div>
+      <div class="text-gray-400 text-sm">Gedeelde kosten</div>
+    </a>
+    <a href="/rapport" class="bg-amber-600 hover:bg-amber-500 border border-amber-500 rounded-xl p-5 transition">
+      <div class="text-3xl mb-2">📊</div>
+      <div class="font-bold">Maandrapport</div>
+      <div class="text-gray-200 text-sm">Overzicht genereren</div>
+    </a>
+  </div>
+</div>
+{% endblock %}

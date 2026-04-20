@@ -1,0 +1,14 @@
+# Credentials — NOOIT committen
+google_credentials.json
+
+# Database
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# OS
+.DS_Store

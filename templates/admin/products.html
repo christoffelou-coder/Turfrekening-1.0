@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Producten{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-6">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="/admin" class="text-gray-400 hover:text-white">← Admin</a>
+    <h1 class="text-2xl font-bold text-amber-400">📦 Producten</h1>
+  </div>
+
+  <!-- Nieuw product -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
+    <h2 class="font-semibold mb-3">Nieuw product</h2>
+    <form method="POST" class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="action" value="add" />
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Naam</label>
+        <input name="name" required placeholder="Bier" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-28" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Prijs (€)</label>
+        <input name="price" type="number" step="0.01" min="0" required placeholder="0.68" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-24" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Emoji</label>
+        <input name="emoji" placeholder="🍺" value="🍺" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16 text-center" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
+        <input name="sort_order" type="number" value="{{ products|length }}" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
+      </div>
+      <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg font-semibold text-sm btn-press">
+        + Toevoegen
+      </button>
+    </form>
+  </div>
+
+  <!-- Standaard producten hint -->
+  <div class="bg-gray-800/50 border border-gray-700 rounded-xl p-3 mb-4 text-sm text-gray-400">
+    💡 Standaard producten: Bier (🍺 €0,68), Blikje (🥤 €0,85), Flesje (🍾 €0,82), Pakjes (📦 €0,68), Ei (🥚 €0,30), Stelz (🍸 €10,00)
+  </div>
+
+  <!-- Productenlijst -->
+  <div class="space-y-3">
+    {% for product in products %}
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
+      <div class="text-3xl w-10 text-center">{{ product.emoji }}</div>
+      <div class="flex-1">
+        <div class="font-semibold flex items-center gap-2">
+          {{ product.name }}
+          <span class="text-amber-400 text-sm">€{{ '%.2f'|format(product.price)|replace('.', ',') }}</span>
+          {% if not product.is_active %}<span class="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full">inactief</span>{% endif %}
+        </div>
+        <div class="text-xs text-gray-500">Volgorde: {{ product.sort_order }}</div>
+      </div>
+      <details class="text-sm">
+        <summary class="cursor-pointer text-gray-400 hover:text-white px-3 py-1 bg-gray-700 rounded-lg">Bewerken</summary>
+        <form method="POST" class="mt-2 flex flex-wrap gap-2 items-end bg-gray-700 p-3 rounded-lg">
+          <input type="hidden" name="action" value="edit" />
+          <input type="hidden" name="product_id" value="{{ product.id }}" />
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Naam</label>
+            <input name="name" value="{{ product.name }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-24" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Prijs</label>
+            <input name="price" type="number" step="0.01" value="{{ product.price }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-20" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Emoji</label>
+            <input name="emoji" value="{{ product.emoji }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14 text-center" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
+            <input name="sort_order" type="number" value="{{ product.sort_order }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14" />
+          </div>
+          <div class="flex items-center gap-1">
+            <input type="checkbox" name="is_active" id="pa-{{ product.id }}" {% if product.is_active %}checked{% endif %} />
+            <label for="pa-{{ product.id }}" class="text-xs text-gray-300">Actief</label>
+          </div>
+          <button type="submit" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-semibold">Opslaan</button>
+        </form>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

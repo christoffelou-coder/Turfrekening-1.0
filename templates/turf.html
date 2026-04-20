@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}Turfen{% endblock %}
+{% block nav %}{% endblock %}
+
+{% block head %}
+<style>
+  html, body { height: 100%; overflow: hidden; }
+
+  /* ── Product knoppen (horizontale rij) ── */
+  .product-btn {
+    flex-shrink: 0;
+    width: calc((100vw - 1.5rem) / 6);
+    border-radius: 0.875rem;
+    padding: 0.6rem 0.3rem;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.08s, border-color 0.1s, background 0.1s;
+    border: 2px solid #374151;
+    background: #1f2937;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+    box-sizing: border-box;
+  }
+  .product-btn:active { transform: scale(0.92); }
+  .product-btn.selected {
+    border-color: #f59e0b;
+    background: #292929;
+  }
+  .product-emoji { font-size: 2rem; line-height: 1; }
+  .product-name  { font-size: 1rem; font-weight: 600; color: #e5e7eb; margin-top: 0.25rem; }
+
+  /* ── Persoon kaarten ── */
+  .user-card {
+    border-radius: 0.875rem;
+    padding: 0.7rem 0.4rem;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.08s, background 0.1s;
+    border: 2px solid transparent;
+    background: #1f2937;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+    box-sizing: border-box;
+  }
+  .user-card:active { transform: scale(0.93); }
+  .user-card.subtract-mode { border-color: #ef4444 !important; }
+
+  .user-name  { font-size: 1.1rem; font-weight: 600; color: #f3f4f6; }
+  .user-count { font-size: 1.5rem; font-weight: 700; color: #f59e0b; line-height: 1; margin-top: 0.2rem; }
+  .user-balance { font-size: 0.8rem; margin-top: 0.2rem; }
+  .balance-pos { color: #4ade80; }
+  .balance-neg { color: #f87171; }
+
+  /* ── Correctie knop ── */
+  #subtractBtn.active {
+    background: #ef4444 !important;
+    border-color: #ef4444 !important;
+    color: white !important;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(4rem);
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 0.75rem 1.5rem;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+    z-index: 100;
+    white-space: nowrap;
+    font-size: 0.9rem;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* ── Shake ── */
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  .shake { animation: shake 0.3s ease; }
+
+  /* ── Scrollbar verbergen op touch ── */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .scroll-x::-webkit-scrollbar { display: none; }
+  .scroll-y { overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .scroll-y::-webkit-scrollbar { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="height:100vh; display:flex; flex-direction:column; background:#030712; overflow:hidden;">
+
+  <!-- ── Header ── -->
+  <header style="display:flex; align-items:center; justify-content:space-between; padding:0.65rem 1rem; background:#111827; border-bottom:1px solid #1f2937; flex-shrink:0;">
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+      <span style="color:#f59e0b; font-weight:700; font-size:1.2rem;">🍺 Turfrekening</span>
+      {% if period %}<span style="color:#6b7280; font-size:0.85rem;">{{ period.name }}</span>{% endif %}
+    </div>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+      <button id="subtractBtn" onclick="toggleSubtract()"
+        style="padding:0.5rem 1rem; background:#1f2937; border:2px solid #374151; border-radius:0.6rem; color:#d1d5db; font-size:0.95rem; font-weight:700; cursor:pointer; transition:all 0.15s;">
+        − Correctie
+      </button>
+      <a href="/admin" style="padding:0.5rem 0.85rem; background:#1f2937; border-radius:0.6rem; color:#9ca3af; font-size:0.85rem; text-decoration:none;">⚙</a>
+      <a href="/rapport" style="padding:0.5rem 0.85rem; background:#1f2937; border-radius:0.6rem; color:#9ca3af; font-size:0.85rem; text-decoration:none;">📊</a>
+    </div>
+  </header>
+
+  {% if not period %}
+  <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+    <div style="text-align:center; color:#6b7280;">
+      <p style="font-size:1.4rem; margin-bottom:0.5rem;">Geen actieve periode</p>
+      <a href="/admin/periods" style="color:#f59e0b;">Maak een nieuwe periode aan</a>
+    </div>
+  </div>
+  {% else %}
+
+  <!-- ── Producten: 1 rij, zijwaarts scrollen ── -->
+  <div style="flex-shrink:0; padding:0.75rem 0.75rem 0.6rem; border-bottom:1px solid #1f2937;">
+    <p style="color:#6b7280; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Welk product?</p>
+    <div class="scroll-x" id="productsRow"
+         style="display:flex; gap:0.5rem; padding-bottom:2px;">
+      {% for product in products %}
+      <div class="product-btn" id="product-{{ product.id }}"
+           onclick="selectProduct({{ product.id }}, '{{ product.name }}', '{{ product.emoji }}')">
+        <div class="product-emoji">{{ product.emoji }}</div>
+        <div class="product-name">{{ product.name }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Status balk ── -->
+  <div style="flex-shrink:0; padding:0.4rem 0.75rem; background:#111827; border-bottom:1px solid #1f2937; display:flex; align-items:center; gap:0.5rem;">
+    <p id="selectedLabel" style="color:#6b7280; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; margin:0;">
+      Selecteer eerst een product hierboven
+    </p>
+    <span id="subtractLabel" style="display:none; background:#ef4444; color:white; font-size:0.68rem; padding:0.15rem 0.5rem; border-radius:0.4rem; font-weight:600;">CORRECTIE</span>
+  </div>
+
+  <!-- ── Personen: 5×3 zichtbaar, daarna zijwaarts scrollen ── -->
+  <div class="scroll-x" style="flex:1; padding:0.75rem; display:flex; align-items:stretch;">
+    <div id="usersGrid" style="
+      display: grid;
+      grid-template-rows: repeat(5, 1fr);
+      grid-auto-flow: column;
+      grid-auto-columns: calc((100vw - 2rem) / 3 - 0.35rem);
+      gap: 0.5rem;
+      min-width: max-content;
+      flex: 1;
+    ">
+      {% for user in users %}
+      {% set balance = user_balances.get(user.id, 0) %}
+      <div class="user-card" id="user-{{ user.id }}"
+           onclick="handleUserClick({{ user.id }}, '{{ user.name }}')">
+        <div class="user-name">{{ user.name }}</div>
+        <div class="user-count" id="count-{{ user.id }}" style="display:none;">0</div>
+        <div class="user-balance {% if balance >= 0 %}balance-pos{% else %}balance-neg{% endif %}"
+             id="balance-{{ user.id }}">
+          {% if balance >= 0 %}+{% endif %}€{{ '%.2f'|format(balance)|replace('.', ',') }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let selectedProductId = null;
+  let selectedProductName = null;
+  let selectedProductEmoji = null;
+  let subtractMode = false;
+
+  function selectProduct(id, name, emoji) {
+    document.querySelectorAll('.product-btn').forEach(el => el.classList.remove('selected'));
+    selectedProductId = id;
+    selectedProductName = name;
+    selectedProductEmoji = emoji;
+    document.getElementById('product-' + id).classList.add('selected');
+
+    const label = document.getElementById('selectedLabel');
+    label.textContent = emoji + ' ' + name + ' — tik op een persoon:';
+    label.style.color = '#f3f4f6';
+
+    fetchProductCounts(id);
+  }
+
+  function fetchProductCounts(productId) {
+    fetch('/api/product-counts/' + productId)
+    .then(r => r.json())
+    .then(counts => {
+      document.querySelectorAll('.user-card').forEach(card => {
+        const uid = card.id.replace('user-', '');
+        const countEl = document.getElementById('count-' + uid);
+        const balEl   = document.getElementById('balance-' + uid);
+        const cnt = counts[uid] || 0;
+        if (countEl) { countEl.textContent = cnt; countEl.style.display = cnt > 0 ? 'block' : 'none'; }
+        if (balEl)   balEl.style.display = 'none';
+      });
+    });
+  }
+
+  function toggleSubtract() {
+    subtractMode = !subtractMode;
+    const btn = document.getElementById('subtractBtn');
+    const lbl = document.getElementById('subtractLabel');
+    btn.classList.toggle('active', subtractMode);
+    lbl.style.display = subtractMode ? 'inline' : 'none';
+    document.querySelectorAll('.user-card').forEach(el => el.classList.toggle('subtract-mode', subtractMode));
+  }
+
+  function handleUserClick(userId, userName) {
+    if (!selectedProductId) {
+      showToast('⚠️ Selecteer eerst een product!');
+      document.getElementById('productsRow').classList.add('shake');
+      setTimeout(() => document.getElementById('productsRow').classList.remove('shake'), 400);
+      return;
+    }
+    const qty = subtractMode ? -1 : 1;
+    addTally(userId, userName, qty);
+  }
+
+  function addTally(userId, userName, qty) {
+    fetch('/api/tally', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, product_id: selectedProductId, quantity: qty })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showToast('❌ ' + data.error); return; }
+
+      // Update count in UI
+      const countEl = document.getElementById('count-' + userId);
+      if (countEl) {
+        const newCount = Math.max(0, parseInt(countEl.textContent || '0') + qty);
+        countEl.textContent = newCount;
+        countEl.style.display = newCount > 0 ? 'block' : 'none';
+      }
+
+      const standStr = (data.new_stand >= 0 ? '+' : '') + '€' + data.new_stand.toFixed(2).replace('.', ',');
+      if (qty < 0) {
+        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#ef4444');
+      } else {
+        showToast('✓ Geturfd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#16a34a');
+      }
+    })
+    .catch(() => showToast('❌ Verbindingsfout'));
+  }
+
+  function showToast(msg, duration = 2000, color = null) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.style.borderColor = color || '#374151';
+    toast.style.color = color || '';
+    toast.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
+  }
+</script>
+{% endblock %}
