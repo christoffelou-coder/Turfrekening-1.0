@@ -219,7 +219,7 @@ def get_period_overview(period_id):
     Returns dict met alle benodigde data voor het rapport.
     """
     period = Period.query.get(period_id)
-    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
     # Per-persoon overzicht

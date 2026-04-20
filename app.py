@@ -54,7 +54,7 @@ def create_tables():
 @app.route("/")
 def index():
     period = get_active_period()
-    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
     # Huidige stand per persoon
@@ -189,7 +189,7 @@ def rapport(period_id=None):
 @app.route("/admin")
 def admin():
     period = get_active_period()
-    users = User.query.order_by(User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.order_by(Product.sort_order).all()
     periods = Period.query.order_by(Period.start_date.desc()).all()
     return render_template("admin/index.html", period=period, users=users, products=products, periods=periods)
@@ -220,7 +220,7 @@ def admin_users():
                 db.session.commit()
         return redirect(url_for("admin_users"))
 
-    users = User.query.order_by(User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     period = get_active_period()
     user_stands = {}
     if period:
@@ -401,7 +401,7 @@ def admin_payments():
                 db.session.commit()
         return redirect(url_for("admin_payments"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     payments = (
         Payment.query.filter_by(period_id=period.id)
         .order_by(Payment.date.desc())
@@ -446,7 +446,7 @@ def admin_corrections():
                 db.session.commit()
         return redirect(url_for("admin_corrections"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     corrections = (
         Correction.query.filter_by(period_id=period.id)
         .order_by(Correction.date.desc())
@@ -515,7 +515,7 @@ def ho():
 
         return redirect(url_for("ho"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc()).all()
     turfverlies = get_total_turfverlies(period.id)
     inventory = get_inventory_data(period.id)

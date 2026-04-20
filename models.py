@@ -29,6 +29,8 @@ class User(db.Model):
     # Balance carried over from the previous period
     previous_balance = db.Column(db.Float, default=0.0)
 
+    sort_order = db.Column(db.Integer, default=0)
+
     tallies = db.relationship("Tally", backref="user", lazy=True)
     payments = db.relationship("Payment", backref="user", lazy=True)
     corrections = db.relationship("Correction", backref="user", lazy=True)

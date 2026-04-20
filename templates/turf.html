@@ -69,18 +69,20 @@
   /* ── Toast ── */
   #toast {
     position: fixed;
-    bottom: 2rem;
+    bottom: 1.5rem;
     left: 50%;
-    transform: translateX(-50%) translateY(4rem);
-    background: #1f2937;
-    border: 1px solid #374151;
+    transform: translateX(-50%) translateY(5rem);
+    background: #111827;
+    border: 2px solid #374151;
     border-radius: 1rem;
-    padding: 0.75rem 1.5rem;
-    transition: transform 0.3s ease, opacity 0.3s ease;
+    padding: 0.7rem 1.6rem;
+    transition: transform 0.25s ease, opacity 0.25s ease;
     opacity: 0;
     z-index: 100;
     white-space: nowrap;
-    font-size: 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   }
   #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
@@ -247,7 +249,7 @@
     .then(data => {
       if (data.error) { showToast('❌ ' + data.error); return; }
 
-      // Update count in UI
+      // Update turfcount op kaart
       const countEl = document.getElementById('count-' + userId);
       if (countEl) {
         const newCount = Math.max(0, parseInt(countEl.textContent || '0') + qty);
@@ -255,11 +257,20 @@
         countEl.style.display = newCount > 0 ? 'block' : 'none';
       }
 
+      // Update saldo op kaart
+      const balEl = document.getElementById('balance-' + userId);
+      if (balEl) {
+        const stand = data.new_stand;
+        balEl.textContent = (stand >= 0 ? '+' : '') + '€' + stand.toFixed(2).replace('.', ',');
+        balEl.className = 'user-balance ' + (stand >= 0 ? 'balance-pos' : 'balance-neg');
+        balEl.style.display = '';
+      }
+
       const standStr = (data.new_stand >= 0 ? '+' : '') + '€' + data.new_stand.toFixed(2).replace('.', ',');
       if (qty < 0) {
-        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#ef4444');
+        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#ef4444');
       } else {
-        showToast('✓ Geturfd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#16a34a');
+        showToast('✓ Aangeslagen: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#16a34a');
       }
     })
     .catch(() => showToast('❌ Verbindingsfout'));
