@@ -159,7 +159,7 @@ def _normalize(name):
 
 
 def _sync_existing_overview(spreadsheet, overview):
-    """Update kolommen D (Overgemaakt), E (Geturfd), F (HO), G (Correctie) in Overview tab."""
+    """Update C (Vorige Stand), D (Overgemaakt), E (Geturfd), F (HO), G (Correctie), I (Stand) in Overview tab."""
     ws = spreadsheet.worksheet("Overview")
     all_data = ws.get_all_values()
 
@@ -176,12 +176,15 @@ def _sync_existing_overview(spreadsheet, overview):
         ur = user_lookup.get(_normalize(name))
         if not ur:
             continue
-        row_num = i + 1
+        r = i + 1
         updates += [
-            {"range": f"D{row_num}", "values": [[_euro(ur["overgemaakt"])]]},
-            {"range": f"E{row_num}", "values": [[_euro(ur["geturfd"])]]},
-            {"range": f"F{row_num}", "values": [[_euro(ur["ho"])]]},
-            {"range": f"G{row_num}", "values": [[_euro(ur["correctie"])]]},
+            {"range": f"C{r}", "values": [[_euro(ur["vorige_stand"])]]},
+            {"range": f"D{r}", "values": [[_euro(ur["overgemaakt"])]]},
+            {"range": f"E{r}", "values": [[_euro(ur["geturfd"])]]},
+            {"range": f"F{r}", "values": [[_euro(ur["ho"])]]},
+            {"range": f"G{r}", "values": [[_euro(ur["correctie"])]]},
+            # Stand als formule zodat alles gelinkt blijft
+            {"range": f"I{r}", "values": [[f"=C{r}+D{r}-E{r}-F{r}+G{r}"]]},
         ]
 
     if updates:
@@ -189,14 +192,13 @@ def _sync_existing_overview(spreadsheet, overview):
 
 
 def _sync_existing_invullen(spreadsheet, overview):
-    """Update Invullen tab: turfcounts per persoon + geturfd & prijs per product in stock sectie."""
+    """Update Invullen tab: turfcounts per persoon, volledige voorraad + formules, HO sectie."""
     ws = spreadsheet.worksheet("Invullen")
     all_data = ws.get_all_values()
 
     if len(all_data) < 6:
         return
 
-    # ── Personen sectie ──────────────────────────────────────────────────────
     header_row = all_data[5]  # rij 6 (0-based: 5)
 
     product_col_map = {}
@@ -208,23 +210,21 @@ def _sync_existing_invullen(spreadsheet, overview):
     db_product_map = {_canonical(p.name): p for p in overview["products"]}
     user_lookup = {_normalize(r["user"].name): r for r in overview["user_rows"]}
     skip_cols = {_canonical("gekocht"), _canonical("totaal"), _canonical("hh")}
-
-    # Bereken totalen per product (voor stock sectie)
-    product_total_qty = {}
-    for ur in overview["user_rows"]:
-        for prod_id, qty in ur["tallies_per_product"].items():
-            product_total_qty[prod_id] = product_total_qty.get(prod_id, 0) + qty
+    inv_map = {_canonical(row["product"].name): row for row in overview["inventory"]}
 
     updates = []
+    ho_header_row = None
+    stock_data_rows = []  # (row_num) voor formules in totaalrij
 
     for i, row in enumerate(all_data):
+        r = i + 1
+
         # ── Personen sectie (col L = idx 11) ────────────────────────────────
         if len(row) > 11:
             name = row[11].strip()
             if name and _normalize(name) not in ("hh", "totaal", "ho", ""):
                 ur = user_lookup.get(_normalize(name))
                 if ur:
-                    row_num = i + 1
                     tally_map = ur["tallies_per_product"]
                     for prod_canonical, col_idx in product_col_map.items():
                         if prod_canonical in skip_cols:
@@ -232,43 +232,117 @@ def _sync_existing_invullen(spreadsheet, overview):
                         db_prod = db_product_map.get(prod_canonical)
                         if db_prod:
                             count = tally_map.get(db_prod.id, 0)
-                            updates.append({
-                                "range": f"{_col_letter(col_idx)}{row_num}",
-                                "values": [[count]],
-                            })
+                            updates.append({"range": f"{_col_letter(col_idx)}{r}", "values": [[count]]})
                     totaal_idx = product_col_map.get(_canonical("totaal"))
                     if totaal_idx is not None:
-                        updates.append({
-                            "range": f"{_col_letter(totaal_idx)}{row_num}",
-                            "values": [[_euro(ur["geturfd"])]],
-                        })
+                        updates.append({"range": f"{_col_letter(totaal_idx)}{r}", "values": [[_euro(ur["geturfd"])]]})
 
-        # ── Stock sectie (col A = idx 0): prijs en geturfd per product ──────
+        # ── Stock sectie (col A = idx 0) ──────────────────────────────────────
         if len(row) > 0:
             prod_name = row[0].strip()
-            if not prod_name or _normalize(prod_name) in ("totaal", "ho", "limo", ""):
+            norm = _normalize(prod_name)
+
+            if norm == "ho":
+                ho_header_row = r
                 continue
+            if not prod_name or norm in ("totaal", "limo", "limo ", "", "turfverlies"):
+                continue
+
             db_prod = db_product_map.get(_canonical(prod_name))
+            inv_row = inv_map.get(_canonical(prod_name))
+
             if db_prod:
-                row_num = i + 1
-                total_qty = product_total_qty.get(db_prod.id, 0)
+                stock_data_rows.append(r)
+                updates.append({"range": f"B{r}", "values": [[_euro(db_prod.price)]]})
+
+                if inv_row:
+                    updates += [
+                        {"range": f"C{r}", "values": [[inv_row["stock_begin"]]]},
+                        {"range": f"D{r}", "values": [[inv_row["bijstock"]]]},
+                        {"range": f"E{r}", "values": [[inv_row["stock_eind"]]]},
+                        # Formules: alles gelinkt aan de ruwe data
+                        {"range": f"F{r}", "values": [[f"=C{r}+D{r}-E{r}"]]},          # Gebruikt
+                        {"range": f"G{r}", "values": [[f"=E{r}*B{r}"]]},                # In Stock (€)
+                        {"range": f"H{r}", "values": [[inv_row["geturfd"]]]},
+                        {"range": f"I{r}", "values": [[f"=F{r}-H{r}"]]},               # Turf tekort
+                        {"range": f"J{r}", "values": [[f"=I{r}*B{r}"]]},               # Turfverlies (€)
+                    ]
+                else:
+                    total_qty = sum(ur["tallies_per_product"].get(db_prod.id, 0) for ur in overview["user_rows"])
+                    updates.append({"range": f"H{r}", "values": [[total_qty]]})
+
+    # ── Totaalrij stock sectie: formules die optellen ────────────────────────
+    for i, row in enumerate(all_data):
+        if len(row) > 0 and _normalize(row[0].strip()) == "totaal" and i < 20:
+            r = i + 1
+            if stock_data_rows:
+                first, last = stock_data_rows[0], stock_data_rows[-1]
                 updates += [
-                    {"range": f"B{row_num}", "values": [[_euro(db_prod.price)]]},
-                    {"range": f"H{row_num}", "values": [[total_qty]]},
+                    {"range": f"F{r}", "values": [[f"=SUM(F{first}:F{last})"]]},
+                    {"range": f"G{r}", "values": [[f"=SUM(G{first}:G{last})"]]},
+                    {"range": f"H{r}", "values": [[f"=SUM(H{first}:H{last})"]]},
+                    {"range": f"I{r}", "values": [[f"=SUM(I{first}:I{last})"]]},
+                    {"range": f"J{r}", "values": [[f"=SUM(J{first}:J{last})"]]},
                 ]
+            break
 
     # ── Totaalrij personen sectie ────────────────────────────────────────────
     for i, row in enumerate(all_data):
         if len(row) > 11 and _normalize(row[11].strip()) == "totaal":
-            row_num = i + 1
+            r = i + 1
             totaal_idx = product_col_map.get(_canonical("totaal"))
             if totaal_idx is not None:
-                grand_total = sum(_euro(r["geturfd"]) for r in overview["user_rows"])
-                updates.append({
-                    "range": f"{_col_letter(totaal_idx)}{row_num}",
-                    "values": [[grand_total]],
-                })
+                grand_total = sum(_euro(ur["geturfd"]) for ur in overview["user_rows"])
+                updates.append({"range": f"{_col_letter(totaal_idx)}{r}", "values": [[grand_total]]})
             break
+
+    # ── HO sectie: events vanuit DB ──────────────────────────────────────────
+    if ho_header_row is not None:
+        ho_events = overview.get("ho_events", [])
+        turfverlies_total = _euro(overview.get("turfverlies_total", 0))
+
+        r = ho_header_row + 1  # rij na "HO" header
+
+        # Kolomkoppen HO sectie
+        updates += [
+            {"range": f"A{r}", "values": [["Naam"]]},
+            {"range": f"C{r}", "values": [["Bedrag"]]},
+            {"range": f"E{r}", "values": [["Omschrijving"]]},
+            {"range": f"F{r}", "values": [["Verdeling"]]},
+        ]
+
+        r += 1
+        tv_row = r
+        updates += [
+            {"range": f"A{r}", "values": [["Turfverlies"]]},
+            {"range": f"C{r}", "values": [[turfverlies_total]]},
+            {"range": f"E{r}", "values": [["Automatisch berekend uit voorraad"]]},
+        ]
+
+        for event in ho_events:
+            r += 1
+            updates += [
+                {"range": f"A{r}", "values": [[event.name]]},
+                {"range": f"C{r}", "values": [[_euro(event.total_cost)]]},
+                {"range": f"E{r}", "values": [[event.notes or ""]]},
+                {"range": f"F{r}", "values": [[event.distribution_type]]},
+            ]
+
+        # Totaal HO met formule
+        r += 1
+        updates += [
+            {"range": f"A{r}", "values": [["Totaal HO"]]},
+            {"range": f"C{r}", "values": [[f"=SUM(C{tv_row}:C{r-1})"]]},
+        ]
+
+        # Lege rijen daarna leegmaken (opruimen oude data)
+        for clear_r in range(r + 1, r + 6):
+            updates += [
+                {"range": f"A{clear_r}", "values": [[""]]},
+                {"range": f"C{clear_r}", "values": [[""]]},
+                {"range": f"E{clear_r}", "values": [[""]]},
+                {"range": f"F{clear_r}", "values": [[""]]},
+            ]
 
     if updates:
         ws.batch_update(updates, value_input_option="USER_ENTERED")
