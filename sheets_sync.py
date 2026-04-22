@@ -14,15 +14,30 @@ EXISTING_SPREADSHEET_ID = "10MGTFssPTg6GUmMp0sEp-O43wY8_aUd8BqvI190W4FY"
 CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "google_credentials.json")
 
 # Kleuren (RGB 0-1)
-DARK_BG    = {"red": 0.13, "green": 0.13, "blue": 0.18}
-HEADER_BG  = {"red": 0.20, "green": 0.22, "blue": 0.28}
-GREEN_BG   = {"red": 0.18, "green": 0.62, "blue": 0.27}
-RED_BG     = {"red": 0.83, "green": 0.18, "blue": 0.18}
-WHITE      = {"red": 1.0,  "green": 1.0,  "blue": 1.0}
-GOLD       = {"red": 0.96, "green": 0.62, "blue": 0.04}
-GRAY_TEXT  = {"red": 0.5,  "green": 0.5,  "blue": 0.5}
-LIGHT_BG   = {"red": 0.95, "green": 0.95, "blue": 0.97}
-ROW_ALT    = {"red": 0.97, "green": 0.97, "blue": 1.00}
+DARK_BG      = {"red": 0.13, "green": 0.13, "blue": 0.18}
+HEADER_BG    = {"red": 0.20, "green": 0.22, "blue": 0.28}
+SECTION_BG   = {"red": 0.27, "green": 0.30, "blue": 0.37}
+GREEN_BG     = {"red": 0.18, "green": 0.62, "blue": 0.27}
+RED_BG       = {"red": 0.83, "green": 0.18, "blue": 0.18}
+WHITE        = {"red": 1.0,  "green": 1.0,  "blue": 1.0}
+GOLD         = {"red": 0.96, "green": 0.62, "blue": 0.04}
+GRAY_TEXT    = {"red": 0.5,  "green": 0.5,  "blue": 0.5}
+LIGHT_BG     = {"red": 0.95, "green": 0.95, "blue": 0.97}
+ROW_ALT      = {"red": 0.97, "green": 0.97, "blue": 1.00}
+# Kleurcodes voor nieuwe tabs
+ORANGE_INPUT = {"red": 1.0,  "green": 0.88, "blue": 0.70}   # 🟠 gebruiker vult in
+BLUE_CALC    = {"red": 0.88, "green": 0.94, "blue": 1.0}    # 🔵 formule / app synct
+GREEN_RESULT = {"red": 0.84, "green": 0.94, "blue": 0.85}   # 🟢 eindresultaat
+WHITE_CELL   = {"red": 1.0,  "green": 1.0,  "blue": 1.0}    # ⬜ app synct (wit)
+
+# Rij-indices (0-gebaseerd) voor vaste layouts
+STAND_R_TITLE = 0; STAND_R_LEGEND = 1; STAND_R_HEADERS = 2; STAND_R_DATA = 3
+VOOR_R_TITLE  = 0; VOOR_R_LEGEND  = 1; VOOR_R_HEADERS  = 2; VOOR_R_DATA  = 3
+HO_R_TITLE = 0; HO_R_LEGEND = 1; HO_R_SEC1 = 2; HO_R_HEADERS1 = 3
+HO_R_EVENTS = 4   # eerste event-rij (10 slots: rij 5-14 in sheet)
+HO_R_TV     = 14  # turfverlies rij
+HO_R_TOTAAL = 15; HO_R_PER_P = 16; HO_R_ACTIEF = 17
+HO_R_SEC2 = 19; HO_R_HEADERS2 = 20; HO_R_BET_DATA = 21
 
 
 def _client():
