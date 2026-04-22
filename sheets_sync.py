@@ -674,14 +674,26 @@ def _create_stand_tab(spreadsheet, overview):
     R_DATA   = STAND_R_DATA + 1        # 1-gebaseerd eerste datarij
     R_TOTAAL = STAND_R_DATA + n + 1
 
+    # Rijen in HO tab (1-gebaseerd) die we nodig hebben voor formule-verwijzingen
+    ho_per_p_row = HO_R_PER_P + 1        # = 17  (HO per persoon cel)
+    ho_bet_start = HO_R_BET_DATA + 1     # = 22  (eerste betaling-rij)
+
     rows = [
         [f"📊 Stand — {period.name}", "", "", "", "", "", ""],
-        ["🟠 Zelf invullen", "", "⬜ App synct", "", "🔵 Formule", "", "🟢 Resultaat"],
+        ["🟠 Zelf invullen", "", "🔵 Formule → HO tab", "⬜ App synct", "🔵 Formule → HO tab", "🟠 Zelf invullen", "🟢 Resultaat"],
         ["Naam", "Vorige Stand", "Overgemaakt", "Geturfd", "HO", "Correctie", "Stand"],
     ]
-    for r in ur:
-        rows.append([r["user"].name, _euro(r["vorige_stand"]), _euro(r["overgemaakt"]),
-                     _euro(r["geturfd"]), _euro(r["ho"]), _euro(r["correctie"]), ""])
+    for i, r in enumerate(ur):
+        bet_row = ho_bet_start + i   # rij in HO tab voor deze persoon
+        rows.append([
+            r["user"].name,
+            _euro(r["vorige_stand"]),                   # B - oranje (zelf invullen)
+            f"='HO'!$B${bet_row}",                      # C - formule → HO tab betalingen
+            _euro(r["geturfd"]),                         # D - wit (app synct)
+            f"='HO'!$B${ho_per_p_row}",                 # E - formule → HO per persoon
+            _euro(r["correctie"]),                       # F - oranje (zelf invullen)
+            "",                                          # G - Stand formule
+        ])
     rows.append(["Totaal",
                  f"=SUM(B{R_DATA}:B{R_TOTAAL-1})", f"=SUM(C{R_DATA}:C{R_TOTAAL-1})",
                  f"=SUM(D{R_DATA}:D{R_TOTAAL-1})", f"=SUM(E{R_DATA}:E{R_TOTAAL-1})",
@@ -723,10 +735,13 @@ def _create_stand_tab(spreadsheet, overview):
         row = STAND_R_DATA + i
         alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
         req += [
-            _bg(sid, row, 0, row+1, 1, alt), _bg(sid, row, 1, row+1, 2, ORANGE_INPUT),
-            _bg(sid, row, 2, row+1, 3, ORANGE_INPUT), _bg(sid, row, 3, row+1, 4, WHITE_CELL),
-            _bg(sid, row, 4, row+1, 5, BLUE_CALC), _bg(sid, row, 5, row+1, 6, ORANGE_INPUT),
-            _bg(sid, row, 6, row+1, 7, GREEN_RESULT),
+            _bg(sid, row, 0, row+1, 1, alt),           # A naam
+            _bg(sid, row, 1, row+1, 2, ORANGE_INPUT),  # B vorige stand (zelf)
+            _bg(sid, row, 2, row+1, 3, BLUE_CALC),     # C overgemaakt (formule → HO)
+            _bg(sid, row, 3, row+1, 4, WHITE_CELL),    # D geturfd (app)
+            _bg(sid, row, 4, row+1, 5, BLUE_CALC),     # E HO (formule → HO)
+            _bg(sid, row, 5, row+1, 6, ORANGE_INPUT),  # F correctie (zelf)
+            _bg(sid, row, 6, row+1, 7, GREEN_RESULT),  # G stand (formule)
             _fmt(sid, row, 0, row+1, 1, textFormat={"bold": True}),
             _align(sid, row, 1, row+1, 7, h="RIGHT"),
         ]
@@ -859,7 +874,7 @@ def _create_ho_tab(spreadsheet, overview):
     rows.append(["", "", "", "", "", ""])
     # Sectie Betalingen
     rows.append(["— Betalingen —", "", "", "", "", ""])
-    rows.append(["Naam", "Overgemaakt (€)", "", "", "", ""])
+    rows.append(["Naam", "Overgemaakt (€)  →  Stand tab", "", "", "", ""])
     for r in ur:
         rows.append([r["user"].name, _euro(r["overgemaakt"]), "", "", "", ""])
     rows.append(["Totaal", f"=SUM(B{R_BET_START}:B{R_BET_END})", "", "", "", ""])
@@ -919,13 +934,13 @@ def _create_ho_tab(spreadsheet, overview):
             _bg(sid, row, 2, row+1, 3, alt),
             _align(sid, row, 1, row+1, 2, h="RIGHT"),
         ]
-    # Betalingen rijen
+    # Betalingen rijen — oranje: gebruiker vult in, Stand tab leest via formule
     for i in range(n_users):
         row = HO_R_BET_DATA + i
         alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
         req += [
             _bg(sid, row, 0, row+1, 1, alt),
-            _bg(sid, row, 1, row+1, 2, WHITE_CELL),
+            _bg(sid, row, 1, row+1, 2, ORANGE_INPUT),
             _fmt(sid, row, 0, row+1, 1, textFormat={"bold": True}),
             _align(sid, row, 1, row+1, 2, h="RIGHT"),
         ]
