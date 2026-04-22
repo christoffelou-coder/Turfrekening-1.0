@@ -566,6 +566,16 @@ def sync_sheets():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/setup-tabs", methods=["POST"])
+def setup_tabs():
+    try:
+        from sheets_sync import setup_new_tabs
+        result = setup_new_tabs(app)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 def _scheduled_sync():
     try:
         from sheets_sync import sync_all

@@ -658,6 +658,376 @@ def _sync_turfdata(spreadsheet, overview):
     spreadsheet.batch_update({"requests": requests})
 
 
+# ─── NIEUWE TABS: Stand, Voorraad, HO ───────────────────────────────────────
+
+def _create_stand_tab(spreadsheet, overview):
+    try:
+        ws = spreadsheet.worksheet("Stand")
+        ws.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title="Stand", rows=30, cols=8)
+
+    sid = ws.id
+    ur = overview["user_rows"]
+    n = len(ur)
+    period = overview["period"]
+    R_DATA   = STAND_R_DATA + 1        # 1-gebaseerd eerste datarij
+    R_TOTAAL = STAND_R_DATA + n + 1
+
+    rows = [
+        [f"📊 Stand — {period.name}", "", "", "", "", "", ""],
+        ["🟠 Zelf invullen", "", "⬜ App synct", "", "🔵 Formule", "", "🟢 Resultaat"],
+        ["Naam", "Vorige Stand", "Overgemaakt", "Geturfd", "HO", "Correctie", "Stand"],
+    ]
+    for r in ur:
+        rows.append([r["user"].name, _euro(r["vorige_stand"]), _euro(r["overgemaakt"]),
+                     _euro(r["geturfd"]), _euro(r["ho"]), _euro(r["correctie"]), ""])
+    rows.append(["Totaal",
+                 f"=SUM(B{R_DATA}:B{R_TOTAAL-1})", f"=SUM(C{R_DATA}:C{R_TOTAAL-1})",
+                 f"=SUM(D{R_DATA}:D{R_TOTAAL-1})", f"=SUM(E{R_DATA}:E{R_TOTAAL-1})",
+                 f"=SUM(F{R_DATA}:F{R_TOTAAL-1})", f"=SUM(G{R_DATA}:G{R_TOTAAL-1})"])
+
+    ws.update(rows, "A1", value_input_option="USER_ENTERED")
+
+    # Stand formules
+    ws.batch_update(
+        [{"range": f"G{R_DATA+i}", "values": [[f"=B{R_DATA+i}+C{R_DATA+i}-D{R_DATA+i}-E{R_DATA+i}+F{R_DATA+i}"]]}
+         for i in range(n)],
+        value_input_option="USER_ENTERED"
+    )
+
+    req = [
+        _col_width(sid, 0, 1, 150), _col_width(sid, 1, 7, 118),
+        _row_height(sid, STAND_R_TITLE, STAND_R_TITLE+1, 40),
+        _row_height(sid, STAND_R_LEGEND, STAND_R_LEGEND+1, 22),
+        _row_height(sid, STAND_R_HEADERS, STAND_R_HEADERS+1, 28),
+        _row_height(sid, STAND_R_DATA, STAND_R_DATA+n+1, 26),
+        _bg(sid, STAND_R_TITLE, 0, STAND_R_TITLE+1, 7, DARK_BG),
+        _fmt(sid, STAND_R_TITLE, 0, STAND_R_TITLE+1, 7,
+             textFormat={"bold": True, "fontSize": 14, "foregroundColor": GOLD}, verticalAlignment="MIDDLE"),
+        _merge(sid, STAND_R_TITLE, 0, STAND_R_TITLE+1, 7),
+        _bg(sid, STAND_R_LEGEND, 0, STAND_R_LEGEND+1, 7, LIGHT_BG),
+        _fmt(sid, STAND_R_LEGEND, 0, STAND_R_LEGEND+1, 7,
+             textFormat={"italic": True, "fontSize": 9}, horizontalAlignment="CENTER"),
+        _bg(sid, STAND_R_HEADERS, 0, STAND_R_HEADERS+1, 7, HEADER_BG),
+        _fmt(sid, STAND_R_HEADERS, 0, STAND_R_HEADERS+1, 7,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="CENTER", verticalAlignment="MIDDLE"),
+        _bg(sid, STAND_R_DATA+n, 0, STAND_R_DATA+n+1, 7, HEADER_BG),
+        _fmt(sid, STAND_R_DATA+n, 0, STAND_R_DATA+n+1, 7,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="RIGHT"),
+        _fmt(sid, STAND_R_DATA+n, 0, STAND_R_DATA+n+1, 1,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="LEFT"),
+        _border(sid, STAND_R_HEADERS, 0, STAND_R_DATA+n+1, 7),
+    ]
+    for i in range(n):
+        row = STAND_R_DATA + i
+        alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
+        req += [
+            _bg(sid, row, 0, row+1, 1, alt), _bg(sid, row, 1, row+1, 2, ORANGE_INPUT),
+            _bg(sid, row, 2, row+1, 3, ORANGE_INPUT), _bg(sid, row, 3, row+1, 4, WHITE_CELL),
+            _bg(sid, row, 4, row+1, 5, BLUE_CALC), _bg(sid, row, 5, row+1, 6, ORANGE_INPUT),
+            _bg(sid, row, 6, row+1, 7, GREEN_RESULT),
+            _fmt(sid, row, 0, row+1, 1, textFormat={"bold": True}),
+            _align(sid, row, 1, row+1, 7, h="RIGHT"),
+        ]
+    spreadsheet.batch_update({"requests": req})
+
+
+def _create_voorraad_tab(spreadsheet, overview):
+    try:
+        ws = spreadsheet.worksheet("Voorraad")
+        ws.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title="Voorraad", rows=20, cols=10)
+
+    sid = ws.id
+    products = overview["products"]
+    inv_map  = {row["product"].id: row for row in overview["inventory"]}
+    n = len(products)
+    R_DATA   = VOOR_R_DATA + 1
+    R_TOTAAL = VOOR_R_DATA + n + 1
+
+    rows = [
+        ["📦 Voorraad — Stockbeheer", "", "", "", "", "", "", "", ""],
+        ["🟠 Zelf invullen", "", "", "", "⬜ App synct", "", "🔵 Formule", "", ""],
+        ["Product", "Prijs p/s", "Begin", "Bijstock", "Eind", "Gebruikt", "Geturfd", "Tekort", "Turfverlies €"],
+    ]
+    for p in products:
+        inv = inv_map.get(p.id, {})
+        rows.append([p.name, _euro(p.price),
+                     inv.get("stock_begin", 0), inv.get("bijstock", 0), inv.get("stock_eind", 0),
+                     "", inv.get("geturfd", 0), "", ""])
+    rows.append(["Totaal", "",
+                 f"=SUM(C{R_DATA}:C{R_TOTAAL-1})", f"=SUM(D{R_DATA}:D{R_TOTAAL-1})",
+                 f"=SUM(E{R_DATA}:E{R_TOTAAL-1})", f"=SUM(F{R_DATA}:F{R_TOTAAL-1})",
+                 f"=SUM(G{R_DATA}:G{R_TOTAAL-1})", f"=SUM(H{R_DATA}:H{R_TOTAAL-1})",
+                 f"=SUM(I{R_DATA}:I{R_TOTAAL-1})"])
+
+    ws.update(rows, "A1", value_input_option="USER_ENTERED")
+    ws.batch_update(
+        [u for i in range(n) for u in [
+            {"range": f"F{R_DATA+i}", "values": [[f"=C{R_DATA+i}+D{R_DATA+i}-E{R_DATA+i}"]]},
+            {"range": f"H{R_DATA+i}", "values": [[f"=F{R_DATA+i}-G{R_DATA+i}"]]},
+            {"range": f"I{R_DATA+i}", "values": [[f"=MAX(0,H{R_DATA+i})*B{R_DATA+i}"]]},
+        ]],
+        value_input_option="USER_ENTERED"
+    )
+
+    req = [
+        _col_width(sid, 0, 1, 130), _col_width(sid, 1, 9, 100),
+        _row_height(sid, VOOR_R_TITLE, VOOR_R_TITLE+1, 40),
+        _row_height(sid, VOOR_R_LEGEND, VOOR_R_LEGEND+1, 22),
+        _row_height(sid, VOOR_R_HEADERS, VOOR_R_HEADERS+1, 28),
+        _row_height(sid, VOOR_R_DATA, VOOR_R_DATA+n+1, 26),
+        _bg(sid, VOOR_R_TITLE, 0, VOOR_R_TITLE+1, 9, DARK_BG),
+        _fmt(sid, VOOR_R_TITLE, 0, VOOR_R_TITLE+1, 9,
+             textFormat={"bold": True, "fontSize": 14, "foregroundColor": GOLD}, verticalAlignment="MIDDLE"),
+        _merge(sid, VOOR_R_TITLE, 0, VOOR_R_TITLE+1, 9),
+        _bg(sid, VOOR_R_LEGEND, 0, VOOR_R_LEGEND+1, 9, LIGHT_BG),
+        _fmt(sid, VOOR_R_LEGEND, 0, VOOR_R_LEGEND+1, 9,
+             textFormat={"italic": True, "fontSize": 9}, horizontalAlignment="CENTER"),
+        _bg(sid, VOOR_R_HEADERS, 0, VOOR_R_HEADERS+1, 9, HEADER_BG),
+        _fmt(sid, VOOR_R_HEADERS, 0, VOOR_R_HEADERS+1, 9,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="CENTER", verticalAlignment="MIDDLE"),
+        _bg(sid, VOOR_R_DATA+n, 0, VOOR_R_DATA+n+1, 9, HEADER_BG),
+        _fmt(sid, VOOR_R_DATA+n, 0, VOOR_R_DATA+n+1, 9,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="RIGHT"),
+        _fmt(sid, VOOR_R_DATA+n, 0, VOOR_R_DATA+n+1, 1,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="LEFT"),
+        _border(sid, VOOR_R_HEADERS, 0, VOOR_R_DATA+n+1, 9),
+    ]
+    for i in range(n):
+        row = VOOR_R_DATA + i
+        alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
+        req += [
+            _bg(sid, row, 0, row+1, 1, alt),
+            _bg(sid, row, 1, row+1, 2, ORANGE_INPUT), _bg(sid, row, 2, row+1, 3, ORANGE_INPUT),
+            _bg(sid, row, 3, row+1, 4, ORANGE_INPUT), _bg(sid, row, 4, row+1, 5, ORANGE_INPUT),
+            _bg(sid, row, 5, row+1, 6, BLUE_CALC),    _bg(sid, row, 6, row+1, 7, WHITE_CELL),
+            _bg(sid, row, 7, row+1, 8, BLUE_CALC),    _bg(sid, row, 8, row+1, 9, BLUE_CALC),
+            _fmt(sid, row, 0, row+1, 1, textFormat={"bold": True}),
+            _align(sid, row, 1, row+1, 9, h="RIGHT"),
+        ]
+    spreadsheet.batch_update({"requests": req})
+
+
+def _create_ho_tab(spreadsheet, overview):
+    try:
+        ws = spreadsheet.worksheet("HO")
+        ws.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title="HO", rows=50, cols=6)
+
+    sid = ws.id
+    ho_events = overview.get("ho_events", [])
+    ur        = overview["user_rows"]
+    n_users   = len(ur)
+    period    = overview["period"]
+    active_count = sum(1 for r in ur if r["user"].is_active)
+
+    n_products    = len(overview["products"])
+    tv_row_voorraad = VOOR_R_DATA + n_products + 1   # totaalrij in Voorraad tab (1-gebaseerd)
+
+    # 1-gebaseerde rijnummers voor formule-verwijzingen
+    R_EV_START  = HO_R_EVENTS + 1       # = 5
+    R_TV        = HO_R_TV + 1           # = 15
+    R_TOTAAL    = HO_R_TOTAAL + 1       # = 16
+    R_PER_P     = HO_R_PER_P + 1        # = 17
+    R_ACTIEF    = HO_R_ACTIEF + 1       # = 18
+    R_BET_START = HO_R_BET_DATA + 1     # = 22
+    R_BET_END   = HO_R_BET_DATA + n_users  # laatste betaling-rij
+
+    rows = [
+        [f"💰 HO & Betalingen — {period.name}", "", "", "", "", ""],
+        ["🟠 Zelf invullen", "", "⬜ App synct", "", "🔵 Formule", "🟢 Resultaat"],
+        ["— HO Events —", "", "", "", "", ""],
+        ["Naam event", "Bedrag (€)", "Verdeling", "", "", ""],
+    ]
+    # 10 event-slots
+    for i in range(10):
+        if i < len(ho_events):
+            ev = ho_events[i]
+            rows.append([ev.name, _euro(ev.total_cost), ev.distribution_type, "", "", ""])
+        else:
+            rows.append(["", "", "", "", "", ""])
+    # Turfverlies rij
+    rows.append(["Turfverlies", f"=Voorraad!I{tv_row_voorraad}", "Automatisch (uit Voorraad)", "", "", ""])
+    # Totaal + per persoon + actief
+    rows.append(["Totaal HO", f"=SUM(B{R_EV_START}:B{R_TV})", "", "", "", ""])
+    rows.append(["HO per persoon", f"=B{R_TOTAAL}/B{R_ACTIEF}", "", "", "", ""])
+    rows.append(["Aantal actieve leden", active_count, "", "", "", ""])
+    rows.append(["", "", "", "", "", ""])
+    # Sectie Betalingen
+    rows.append(["— Betalingen —", "", "", "", "", ""])
+    rows.append(["Naam", "Overgemaakt (€)", "", "", "", ""])
+    for r in ur:
+        rows.append([r["user"].name, _euro(r["overgemaakt"]), "", "", "", ""])
+    rows.append(["Totaal", f"=SUM(B{R_BET_START}:B{R_BET_END})", "", "", "", ""])
+
+    ws.update(rows, "A1", value_input_option="USER_ENTERED")
+
+    req = [
+        _col_width(sid, 0, 1, 210), _col_width(sid, 1, 2, 125), _col_width(sid, 2, 3, 200),
+        _row_height(sid, HO_R_TITLE, HO_R_TITLE+1, 40),
+        _row_height(sid, HO_R_LEGEND, HO_R_LEGEND+1, 22),
+        # Titel
+        _bg(sid, HO_R_TITLE, 0, HO_R_TITLE+1, 6, DARK_BG),
+        _fmt(sid, HO_R_TITLE, 0, HO_R_TITLE+1, 6,
+             textFormat={"bold": True, "fontSize": 14, "foregroundColor": GOLD}, verticalAlignment="MIDDLE"),
+        _merge(sid, HO_R_TITLE, 0, HO_R_TITLE+1, 6),
+        # Legend
+        _bg(sid, HO_R_LEGEND, 0, HO_R_LEGEND+1, 6, LIGHT_BG),
+        _fmt(sid, HO_R_LEGEND, 0, HO_R_LEGEND+1, 6,
+             textFormat={"italic": True, "fontSize": 9}, horizontalAlignment="CENTER"),
+        # Sectie koppen
+        _bg(sid, HO_R_SEC1, 0, HO_R_SEC1+1, 6, SECTION_BG),
+        _fmt(sid, HO_R_SEC1, 0, HO_R_SEC1+1, 6,
+             textFormat={"bold": True, "foregroundColor": GOLD}),
+        _bg(sid, HO_R_SEC2, 0, HO_R_SEC2+1, 6, SECTION_BG),
+        _fmt(sid, HO_R_SEC2, 0, HO_R_SEC2+1, 6,
+             textFormat={"bold": True, "foregroundColor": GOLD}),
+        # HO headers
+        _bg(sid, HO_R_HEADERS1, 0, HO_R_HEADERS1+1, 3, HEADER_BG),
+        _fmt(sid, HO_R_HEADERS1, 0, HO_R_HEADERS1+1, 3,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="CENTER"),
+        # Betalingen headers
+        _bg(sid, HO_R_HEADERS2, 0, HO_R_HEADERS2+1, 2, HEADER_BG),
+        _fmt(sid, HO_R_HEADERS2, 0, HO_R_HEADERS2+1, 2,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="CENTER"),
+        # Turfverlies rij
+        _bg(sid, HO_R_TV, 0, HO_R_TV+1, 3, BLUE_CALC),
+        _fmt(sid, HO_R_TV, 0, HO_R_TV+1, 3, textFormat={"italic": True}),
+        # Totaal HO + per persoon
+        _bg(sid, HO_R_TOTAAL, 0, HO_R_TOTAAL+1, 2, GREEN_RESULT),
+        _fmt(sid, HO_R_TOTAAL, 0, HO_R_TOTAAL+1, 2, textFormat={"bold": True}),
+        _bg(sid, HO_R_PER_P, 0, HO_R_PER_P+1, 2, GREEN_RESULT),
+        _fmt(sid, HO_R_PER_P, 0, HO_R_PER_P+1, 2, textFormat={"bold": True}),
+        # Aantal actieve leden (oranje)
+        _bg(sid, HO_R_ACTIEF, 1, HO_R_ACTIEF+1, 2, ORANGE_INPUT),
+        _align(sid, HO_R_TOTAAL, 1, HO_R_ACTIEF+1, 2, h="RIGHT"),
+        # Borders
+        _border(sid, HO_R_HEADERS1, 0, HO_R_ACTIEF+1, 3),
+        _border(sid, HO_R_HEADERS2, 0, HO_R_BET_DATA+n_users+1, 2),
+    ]
+    # Event rijen
+    for i in range(10):
+        row = HO_R_EVENTS + i
+        alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
+        req += [
+            _bg(sid, row, 0, row+1, 1, ORANGE_INPUT),
+            _bg(sid, row, 1, row+1, 2, ORANGE_INPUT),
+            _bg(sid, row, 2, row+1, 3, alt),
+            _align(sid, row, 1, row+1, 2, h="RIGHT"),
+        ]
+    # Betalingen rijen
+    for i in range(n_users):
+        row = HO_R_BET_DATA + i
+        alt = LIGHT_BG if i % 2 == 0 else ROW_ALT
+        req += [
+            _bg(sid, row, 0, row+1, 1, alt),
+            _bg(sid, row, 1, row+1, 2, WHITE_CELL),
+            _fmt(sid, row, 0, row+1, 1, textFormat={"bold": True}),
+            _align(sid, row, 1, row+1, 2, h="RIGHT"),
+        ]
+    # Totaal betalingen
+    bet_tot = HO_R_BET_DATA + n_users
+    req += [
+        _bg(sid, bet_tot, 0, bet_tot+1, 2, HEADER_BG),
+        _fmt(sid, bet_tot, 0, bet_tot+1, 2,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="RIGHT"),
+        _fmt(sid, bet_tot, 0, bet_tot+1, 1,
+             textFormat={"bold": True, "foregroundColor": WHITE}, horizontalAlignment="LEFT"),
+    ]
+    spreadsheet.batch_update({"requests": req})
+
+
+def _sync_stand_tab(spreadsheet, overview):
+    """Sync Geturfd (D) en HO (E) per persoon naar Stand tab."""
+    try:
+        ws = spreadsheet.worksheet("Stand")
+    except gspread.exceptions.WorksheetNotFound:
+        return
+    all_data = ws.get_all_values()
+    user_lookup = {_normalize(r["user"].name): r for r in overview["user_rows"]}
+    updates = []
+    for i, row in enumerate(all_data):
+        name = row[0].strip() if row else ""
+        ur = user_lookup.get(_normalize(name))
+        if ur:
+            r = i + 1
+            updates += [
+                {"range": f"D{r}", "values": [[_euro(ur["geturfd"])]]},
+                {"range": f"E{r}", "values": [[_euro(ur["ho"])]]},
+            ]
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+
+def _sync_voorraad_tab(spreadsheet, overview):
+    """Sync Geturfd qty (G) en Prijs (B) per product naar Voorraad tab."""
+    try:
+        ws = spreadsheet.worksheet("Voorraad")
+    except gspread.exceptions.WorksheetNotFound:
+        return
+    all_data = ws.get_all_values()
+    db_product_map = {_canonical(p.name): p for p in overview["products"]}
+    inv_map = {_canonical(r["product"].name): r for r in overview["inventory"]}
+    updates = []
+    for i, row in enumerate(all_data):
+        prod_name = row[0].strip() if row else ""
+        if not prod_name or _normalize(prod_name) in ("product", "totaal", ""):
+            continue
+        db_prod = db_product_map.get(_canonical(prod_name))
+        inv_row = inv_map.get(_canonical(prod_name))
+        r = i + 1
+        if db_prod:
+            updates.append({"range": f"B{r}", "values": [[_euro(db_prod.price)]]})
+        if inv_row:
+            updates.append({"range": f"G{r}", "values": [[inv_row["geturfd"]]]})
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+
+def _sync_ho_tab(spreadsheet, overview):
+    """Sync betalingen (kolom B) per persoon naar HO tab."""
+    try:
+        ws = spreadsheet.worksheet("HO")
+    except gspread.exceptions.WorksheetNotFound:
+        return
+    all_data = ws.get_all_values()
+    user_lookup = {_normalize(r["user"].name): r for r in overview["user_rows"]}
+    updates = []
+    in_bet = False
+    for i, row in enumerate(all_data):
+        cell_a = row[0].strip() if row else ""
+        if "betalingen" in _normalize(cell_a):
+            in_bet = True
+            continue
+        if not in_bet:
+            continue
+        ur = user_lookup.get(_normalize(cell_a))
+        if ur:
+            updates.append({"range": f"B{i+1}", "values": [[_euro(ur["overgemaakt"])]]})
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+
+def setup_new_tabs(app):
+    """Eenmalige setup: maak Stand, Voorraad en HO tabs aan."""
+    from calculations import get_active_period, get_period_overview
+    with app.app_context():
+        period = get_active_period()
+        if not period:
+            return {"ok": False, "error": "Geen actieve periode"}
+        overview = get_period_overview(period.id)
+        client = _client()
+        existing = client.open_by_key(EXISTING_SPREADSHEET_ID)
+        _create_stand_tab(existing, overview)
+        _create_voorraad_tab(existing, overview)
+        _create_ho_tab(existing, overview)
+        return {"ok": True, "message": "Stand, Voorraad en HO tabs aangemaakt"}
+
+
 def sync_all(app):
     from models import Tally
     from calculations import get_active_period, get_period_overview
@@ -681,6 +1051,10 @@ def sync_all(app):
         _sync_existing_overview(existing, overview)
         _sync_existing_invullen(existing, overview)
         _sync_betalingen(existing, overview)
+        # Nieuwe tabs synchen
+        _sync_stand_tab(existing, overview)
+        _sync_voorraad_tab(existing, overview)
+        _sync_ho_tab(existing, overview)
 
         total_tallies = sum(
             sum(r["tallies_per_product"].values())
