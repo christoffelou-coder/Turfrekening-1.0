@@ -1,5 +1,5 @@
 [build]
-  command = "pip install -r requirements.txt"
+  command = "echo 'Build done'"
   functions = "netlify/functions"
   publish = "_site"
 
@@ -7,7 +7,7 @@
   PYTHON_VERSION = "3.11"
 
 [functions]
-  included_files = ["*.py", "templates/**", "static/**"]
+  included_files = ["app.py", "models.py", "calculations.py", "sheets_sync.py", "templates/**", "static/**"]
 
 [[redirects]]
   from = "/*"
