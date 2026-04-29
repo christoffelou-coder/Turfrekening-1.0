@@ -1,5 +1,5 @@
 [build]
-  command = "pip install -t netlify/functions/app/vendor -r requirements.txt"
+  command = "pip install -t netlify/functions -r requirements.txt"
   functions = "netlify/functions"
   publish = "_site"
 
@@ -11,5 +11,5 @@
 
 [[redirects]]
   from = "/*"
-  to = "/.netlify/functions/app"
+  to = "/.netlify/functions/handler"
   status = 200
