@@ -1,5 +1,5 @@
 [build]
-  command = "echo 'Build done'"
+  command = "echo 'ready'"
   functions = "netlify/functions"
   publish = "_site"
 
