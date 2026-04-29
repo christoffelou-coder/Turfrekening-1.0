@@ -299,14 +299,11 @@
     const grid = document.getElementById('usersGrid')
     grid.innerHTML = allUsers.map(u => {
       const stand = calcStand(u)
-      const balClass = stand >= 0 ? 'balance-pos' : 'balance-neg'
-      const balStr = (stand >= 0 ? '+' : '') + '€' + stand.toFixed(2).replace('.', ',')
       return `
         <div class="user-card" id="user-${u.id}"
              onclick="handleUserClick(${u.id}, '${esc(u.name)}')">
           <div class="user-name">${esc(u.name)}</div>
           <div class="user-count" id="count-${u.id}" style="display:none;">0</div>
-          <div class="user-balance ${balClass}" id="balance-${u.id}">${balStr}</div>
         </div>
       `
     }).join('')
@@ -315,14 +312,6 @@
   function updateUserCard(userId) {
     const user = allUsers.find(u => u.id === userId)
     if (!user) return
-
-    const stand = calcStand(user)
-    const balEl = document.getElementById('balance-' + userId)
-    if (balEl) {
-      balEl.textContent = (stand >= 0 ? '+' : '') + '€' + stand.toFixed(2).replace('.', ',')
-      balEl.className = 'user-balance ' + (stand >= 0 ? 'balance-pos' : 'balance-neg')
-      balEl.style.display = ''
-    }
 
     if (selectedProductId) {
       const cnt = countForProduct(userId, selectedProductId)
@@ -355,7 +344,6 @@
       const balEl   = document.getElementById('balance-' + uid)
       const cnt = countForProduct(uid, id)
       if (countEl) { countEl.textContent = cnt; countEl.style.display = cnt > 0 ? 'block' : 'none' }
-      if (balEl)   balEl.style.display = 'none'
     })
   }
 
@@ -394,13 +382,10 @@
       allTallies.push(data)
       updateUserCard(userId)
 
-      const stand = calcStand(allUsers.find(u => u.id === userId))
-      const standStr = (stand >= 0 ? '+' : '') + '€' + stand.toFixed(2).replace('.', ',')
-
       if (qty < 0) {
-        showToast(`↩ Gecorrigeerd: ${userName} — ${selectedProductEmoji} ${selectedProductName}  (${standStr})`, 2500, '#ef4444')
+        showToast(`↩ Gecorrigeerd: ${userName} — ${selectedProductEmoji} ${selectedProductName}`, 2500, '#ef4444')
       } else {
-        showToast(`✓ Aangeslagen: ${userName} — ${selectedProductEmoji} ${selectedProductName}  (${standStr})`, 2500, '#16a34a')
+        showToast(`✓ Aangeslagen: ${userName} — ${selectedProductEmoji} ${selectedProductName}`, 2500, '#16a34a')
       }
     } catch (e) {
       showToast('❌ Fout: ' + e.message, 3000, '#ef4444')
