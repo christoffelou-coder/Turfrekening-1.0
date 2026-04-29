@@ -1,5 +1,5 @@
 [build]
-  command = "echo 'ready'"
+  command = "pip install -t netlify/functions/app -r requirements.txt"
   functions = "netlify/functions"
   publish = "_site"
 
