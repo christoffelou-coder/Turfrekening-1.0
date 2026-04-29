@@ -25,6 +25,10 @@
         <input name="emoji" placeholder="🍺" value="🍺" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16 text-center" />
       </div>
       <div>
+        <label class="block text-xs text-gray-400 mb-1">Afbeelding URL</label>
+        <input name="image_url" placeholder="https://..." class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-48" />
+      </div>
+      <div>
         <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
         <input name="sort_order" type="number" value="{{ products|length }}" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
       </div>
@@ -43,7 +47,11 @@
   <div class="space-y-3">
     {% for product in products %}
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
-      <div class="text-3xl w-10 text-center">{{ product.emoji }}</div>
+      <div class="w-10 h-10 flex items-center justify-center text-3xl">
+        {% if product.image_url %}
+        <img src="{{ product.image_url }}" alt="{{ product.name }}" class="w-10 h-10 object-cover rounded-lg" />
+        {% else %}{{ product.emoji }}{% endif %}
+      </div>
       <div class="flex-1">
         <div class="font-semibold flex items-center gap-2">
           {{ product.name }}
@@ -68,6 +76,10 @@
           <div>
             <label class="block text-xs text-gray-400 mb-1">Emoji</label>
             <input name="emoji" value="{{ product.emoji }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14 text-center" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Afbeelding URL</label>
+            <input name="image_url" value="{{ product.image_url or '' }}" placeholder="https://..." class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-48" />
           </div>
           <div>
             <label class="block text-xs text-gray-400 mb-1">Volgorde</label>

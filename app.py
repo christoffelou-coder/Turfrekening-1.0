@@ -45,6 +45,12 @@ def init_db():
 def create_tables():
     with app.app_context():
         db.create_all()
+        from sqlalchemy import text
+        try:
+            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -239,8 +245,9 @@ def admin_products():
             price = float(request.form.get("price", 0))
             emoji = request.form.get("emoji", "🍺").strip()
             sort_order = int(request.form.get("sort_order", 0))
+            image_url = request.form.get("image_url", "").strip() or None
             if name:
-                product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order)
+                product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order, image_url=image_url)
                 db.session.add(product)
                 db.session.commit()
         elif action == "edit":
@@ -251,6 +258,7 @@ def admin_products():
                 product.emoji = request.form.get("emoji", product.emoji).strip()
                 product.sort_order = int(request.form.get("sort_order", product.sort_order))
                 product.is_active = "is_active" in request.form
+                product.image_url = request.form.get("image_url", "").strip() or None
                 db.session.commit()
         elif action == "delete":
             product = Product.query.get(request.form.get("product_id"))
