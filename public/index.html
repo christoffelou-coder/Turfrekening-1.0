@@ -284,7 +284,7 @@
     const row = document.getElementById('productsRow')
     row.innerHTML = allProducts.map(p => {
       const img = p.image_url
-        ? `<img src="${p.image_url}" alt="${esc(p.name)}" style="width:2.5rem;height:2.5rem;object-fit:cover;border-radius:0.5rem;" />`
+        ? `<img src="${p.image_url}" alt="${esc(p.name)}" style="width:3.5rem;height:3.5rem;object-fit:contain;border-radius:0.5rem;" />`
         : `<div class="product-emoji">${p.emoji}</div>`
       return `
         <div class="product-btn" id="product-${p.id}"

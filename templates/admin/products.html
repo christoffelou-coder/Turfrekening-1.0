@@ -49,7 +49,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
       <div class="w-10 h-10 flex items-center justify-center text-3xl">
         {% if product.image_url %}
-        <img src="{{ product.image_url }}" alt="{{ product.name }}" class="w-10 h-10 object-cover rounded-lg" />
+        <img src="{{ product.image_url }}" alt="{{ product.name }}" class="w-12 h-12 object-contain rounded-lg" />
         {% else %}{{ product.emoji }}{% endif %}
       </div>
       <div class="flex-1">
