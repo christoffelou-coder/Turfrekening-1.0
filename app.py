@@ -304,6 +304,18 @@ def admin_periods():
                 period.end_date = datetime.strptime(request.form.get("end_date"), "%Y-%m-%d").date()
                 period.is_active = False
                 db.session.commit()
+        elif action == "edit":
+            period = Period.query.get(request.form.get("period_id"))
+            if period:
+                name = request.form.get("name", "").strip()
+                start_date_str = request.form.get("start_date", "")
+                end_date_str = request.form.get("end_date", "")
+                if name:
+                    period.name = name
+                if start_date_str:
+                    period.start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
+                db.session.commit()
         return redirect(url_for("admin_periods"))
 
     periods = Period.query.order_by(Period.start_date.desc()).all()
