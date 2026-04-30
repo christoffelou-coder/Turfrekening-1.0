@@ -46,6 +46,9 @@ class Product(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
     image_url = db.Column(db.Text, nullable=True)
+    # Als dit product meerdere eenheden van een ander product telt (bijv. halve krat = 12 pils)
+    parent_product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True)
+    parent_units = db.Column(db.Integer, default=1)
 
     tallies = db.relationship("Tally", backref="product", lazy=True)
     inventory_purchases = db.relationship("InventoryPurchase", backref="product", lazy=True)

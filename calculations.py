@@ -41,14 +41,25 @@ def get_geturfd_cost(period_id, user_id):
 
 
 def get_total_tallied_per_product(period_id):
-    """Returns dict: {product_id: total_quantity_tallied}"""
+    """Returns dict: {product_id: total_quantity_tallied}.
+    Producten met parent_product_id tellen mee als parent_units × aantal bij het parent product."""
     rows = (
         db.session.query(Tally.product_id, func.sum(Tally.quantity))
         .filter(Tally.period_id == period_id)
         .group_by(Tally.product_id)
         .all()
     )
-    return {pid: qty for pid, qty in rows}
+    result = {pid: qty for pid, qty in rows}
+
+    # Voeg child product tallies toe aan parent product
+    child_products = Product.query.filter(Product.parent_product_id.isnot(None)).all()
+    for child in child_products:
+        child_qty = result.get(child.id, 0)
+        if child_qty > 0:
+            units = child.parent_units or 1
+            result[child.parent_product_id] = result.get(child.parent_product_id, 0) + child_qty * units
+
+    return result
 
 
 # ─── Voorraad ───────────────────────────────────────────────────────────────
