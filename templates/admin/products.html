@@ -32,6 +32,19 @@
         <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
         <input name="sort_order" type="number" value="{{ products|length }}" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
       </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Koppel aan product</label>
+        <select name="parent_product_id" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-36">
+          <option value="">— geen —</option>
+          {% for p in products %}
+          <option value="{{ p.id }}">{{ p.emoji }} {{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Aantal eenheden</label>
+        <input name="parent_units" type="number" min="1" value="1" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
+      </div>
       <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg font-semibold text-sm btn-press">
         + Toevoegen
       </button>
@@ -84,6 +97,19 @@
           <div>
             <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
             <input name="sort_order" type="number" value="{{ product.sort_order }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Koppel aan product</label>
+            <select name="parent_product_id" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-32">
+              <option value="">— geen —</option>
+              {% for p in products %}
+              <option value="{{ p.id }}" {% if product.parent_product_id == p.id %}selected{% endif %}>{{ p.emoji }} {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Aantal eenheden</label>
+            <input name="parent_units" type="number" min="1" value="{{ product.parent_units or 1 }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14" />
           </div>
           <div class="flex items-center gap-1">
             <input type="checkbox" name="is_active" id="pa-{{ product.id }}" {% if product.is_active %}checked{% endif %} />

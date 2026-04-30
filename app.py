@@ -48,6 +48,8 @@ def create_tables():
         from sqlalchemy import text
         try:
             db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT"))
+            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id INTEGER REFERENCES products(id)"))
+            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_units INTEGER DEFAULT 1"))
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -246,8 +248,12 @@ def admin_products():
             emoji = request.form.get("emoji", "🍺").strip()
             sort_order = int(request.form.get("sort_order", 0))
             image_url = request.form.get("image_url", "").strip() or None
+            parent_product_id = request.form.get("parent_product_id") or None
+            parent_units = int(request.form.get("parent_units", 1) or 1)
             if name:
-                product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order, image_url=image_url)
+                product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order,
+                                  image_url=image_url, parent_product_id=parent_product_id,
+                                  parent_units=parent_units)
                 db.session.add(product)
                 db.session.commit()
         elif action == "edit":
@@ -259,6 +265,8 @@ def admin_products():
                 product.sort_order = int(request.form.get("sort_order", product.sort_order))
                 product.is_active = "is_active" in request.form
                 product.image_url = request.form.get("image_url", "").strip() or None
+                product.parent_product_id = request.form.get("parent_product_id") or None
+                product.parent_units = int(request.form.get("parent_units", 1) or 1)
                 db.session.commit()
         elif action == "delete":
             product = Product.query.get(request.form.get("product_id"))
