@@ -20,7 +20,7 @@
         <label class="block text-xs text-gray-400 mb-1">Product</label>
         <select name="product_id" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
           {% for product in products %}
-          <option value="{{ product.id }}">{{ product.emoji }} {{ product.name }}</option>
+          <option value="{{ product.id }}">{% if not product.image_url %}{{ product.emoji }} {% endif %}{{ product.name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -59,7 +59,10 @@
         {% for p in purchases %}
         <tr class="border-b border-gray-700/50">
           <td class="py-1.5 text-gray-400">{{ p.date.strftime('%d-%m') }}</td>
-          <td class="py-1.5">{{ p.product.emoji }} {{ p.product.name }}</td>
+          <td class="py-1.5 flex items-center gap-1.5">
+            {% if p.product.image_url %}<img src="{{ p.product.image_url }}" class="w-5 h-5 object-contain rounded" />{% else %}{{ p.product.emoji }}{% endif %}
+            {{ p.product.name }}
+          </td>
           <td class="py-1.5 text-right">{{ p.quantity }}</td>
           <td class="py-1.5 text-right">{% if p.total_cost %}€{{ '%.2f'|format(p.total_cost)|replace('.', ',') }}{% else %}-{% endif %}</td>
           <td class="py-1.5 text-gray-400">{{ p.notes or '' }}</td>
@@ -89,7 +92,10 @@
           {% for product in products %}
           {% set current = begin_snaps.get(product.id, 0) if snap_type == 'begin' else end_snaps.get(product.id, 0) %}
           <div class="flex items-center gap-3">
-            <span class="w-24 text-sm">{{ product.emoji }} {{ product.name }}</span>
+            <span class="w-24 text-sm flex items-center gap-1">
+              {% if product.image_url %}<img src="{{ product.image_url }}" class="w-5 h-5 object-contain rounded" />{% else %}{{ product.emoji }}{% endif %}
+              {{ product.name }}
+            </span>
             <input name="qty_{{ product.id }}" type="number" min="0" value="{{ current }}"
               class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm w-20" />
             <span class="text-xs text-gray-500">stuks</span>
@@ -124,7 +130,12 @@
           {% for row in inventory %}
           {% set ns.total_verlies = ns.total_verlies + row.turfverlies_eur %}
           <tr class="border-b border-gray-700/50">
-            <td class="py-1.5">{{ row.product.emoji }} {{ row.product.name }}</td>
+            <td class="py-1.5">
+              <span class="flex items-center gap-1.5">
+                {% if row.product.image_url %}<img src="{{ row.product.image_url }}" class="w-5 h-5 object-contain rounded" />{% else %}{{ row.product.emoji }}{% endif %}
+                {{ row.product.name }}
+              </span>
+            </td>
             <td class="py-1.5 text-right text-gray-400">{{ row.stock_begin }}</td>
             <td class="py-1.5 text-right text-green-400">+{{ row.bijstock }}</td>
             <td class="py-1.5 text-right text-gray-400">{{ row.stock_eind }}</td>
