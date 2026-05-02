@@ -182,7 +182,7 @@
         { data: products },
       ] = await Promise.all([
         sb.from('periods').select('*').eq('is_active', true).order('id', { ascending: false }).limit(1),
-        sb.from('users').select('*').eq('is_active', true).order('sort_order').order('name'),
+        sb.from('users').select('*').order('sort_order').order('name'),
         sb.from('products').select('*').eq('is_active', true).order('sort_order'),
       ])
 
