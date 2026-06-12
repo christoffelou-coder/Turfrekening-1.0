@@ -12,10 +12,21 @@ from models import (
 from calculations import (
     get_active_period, get_stand, get_geturfd_cost, get_payments_total,
     get_corrections_total, get_ho_share_for_user, get_period_overview,
-    get_inventory_data, get_total_turfverlies, get_tallied_per_user_product
+    get_inventory_data, get_total_turfverlies, get_tallied_per_user_product,
+    get_ho_shares_bulk, get_stands_bulk
 )
 
+from models import PeriodStartBalance
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def save_period_start_balances(period_id, users):
+    """Sla de huidige previous_balance op als beginstand-snapshot voor deze periode."""
+    PeriodStartBalance.query.filter_by(period_id=period_id).delete()
+    for u in users:
+        db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance=u.previous_balance))
+
 
 app = Flask(__name__)
 
@@ -50,6 +61,17 @@ def create_tables():
             db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT"))
             db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id INTEGER REFERENCES products(id)"))
             db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_units INTEGER DEFAULT 1"))
+            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_product_id INTEGER REFERENCES products(id)"))
+            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_quantity INTEGER"))
+            db.session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS participates_in_ho BOOLEAN DEFAULT TRUE"))
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS period_start_balances (
+                    id SERIAL PRIMARY KEY,
+                    period_id INTEGER REFERENCES periods(id) ON DELETE CASCADE,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    balance FLOAT NOT NULL
+                )
+            """))
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -62,7 +84,7 @@ def create_tables():
 @app.route("/")
 def index():
     period = get_active_period()
-    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
     # Huidige stand per persoon
@@ -203,6 +225,48 @@ def admin():
     return render_template("admin/index.html", period=period, users=users, products=products, periods=periods)
 
 
+# Vorige standen
+@app.route("/admin/vorige-stand", methods=["GET"])
+def admin_vorige_stand():
+    periods = Period.query.order_by(Period.start_date.desc()).all()
+    active = get_active_period()
+    return render_template("admin/vorige_stand.html", periods=periods, active=active)
+
+
+@app.route("/admin/vorige-stand/<int:period_id>", methods=["GET", "POST"])
+def admin_vorige_stand_period(period_id):
+    period = Period.query.get(period_id)
+    if not period:
+        return redirect(url_for("admin_vorige_stand"))
+
+    users = User.query.order_by(User.sort_order, User.name).all()
+
+    if request.method == "POST":
+        # Sla op als snapshot voor deze periode
+        PeriodStartBalance.query.filter_by(period_id=period_id).delete()
+        for u in users:
+            val = request.form.get(f"balance_{u.id}", "").strip()
+            balance = float(val) if val else 0.0
+            db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance=balance))
+        # Als het de actieve periode is, ook previous_balance updaten
+        if period.is_active:
+            for u in users:
+                val = request.form.get(f"balance_{u.id}", "").strip()
+                if val:
+                    u.previous_balance = float(val)
+        db.session.commit()
+        return redirect(url_for("admin_vorige_stand_period", period_id=period_id))
+
+    # Haal huidige snapshot op voor deze periode
+    snaps = {s.user_id: s.balance for s in PeriodStartBalance.query.filter_by(period_id=period_id).all()}
+    # Fallback naar previous_balance als geen snapshot
+    balances = {u.id: snaps.get(u.id, u.previous_balance) for u in users}
+
+    return render_template("admin/vorige_stand.html",
+                           period=period, users=users, balances=balances,
+                           periods=None, active=None)
+
+
 # Gebruikers
 @app.route("/admin/users", methods=["GET", "POST"])
 def admin_users():
@@ -211,7 +275,8 @@ def admin_users():
         if action == "add":
             name = request.form.get("name", "").strip()
             if name:
-                user = User(name=name, previous_balance=float(request.form.get("previous_balance", 0)))
+                max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
+                user = User(name=name, previous_balance=float(request.form.get("previous_balance", 0)), sort_order=max_order + 1)
                 db.session.add(user)
                 db.session.commit()
         elif action == "edit":
@@ -219,6 +284,7 @@ def admin_users():
             if user:
                 user.name = request.form.get("name", user.name).strip()
                 user.is_active = "is_active" in request.form
+                user.participates_in_ho = "participates_in_ho" in request.form
                 user.previous_balance = float(request.form.get("previous_balance", user.previous_balance))
                 db.session.commit()
         elif action == "delete":
@@ -287,25 +353,53 @@ def admin_periods():
         if action == "add":
             name = request.form.get("name", "").strip()
             start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
-            # Deactiveer alle andere periodes
+            source_period_id = request.form.get("source_period_id") or None
+            bron = Period.query.get(int(source_period_id)) if source_period_id else get_active_period()
+            if bron:
+                users = User.query.all()
+                stands = get_stands_bulk(bron.id, users)
+                for u in users:
+                    u.previous_balance = stands[u.id]
             Period.query.update({"is_active": False})
-            period = Period(name=name, start_date=start_date, is_active=True)
-            db.session.add(period)
+            new_period = Period(name=name, start_date=start_date, is_active=True)
+            db.session.add(new_period)
+            db.session.flush()  # get new_period.id
+            users = User.query.all()
+            save_period_start_balances(new_period.id, users)
             db.session.commit()
+        elif action == "copy_balances":
+            source_period_id = int(request.form.get("source_period_id"))
+            bron = Period.query.get(source_period_id)
+            active = get_active_period()
+            if bron and active:
+                users = User.query.all()
+                stands = get_stands_bulk(bron.id, users)
+                for u in users:
+                    u.previous_balance = stands[u.id]
+                save_period_start_balances(active.id, users)
+                db.session.commit()
+        elif action == "delete":
+            period = Period.query.get(int(request.form.get("period_id")))
+            if period and not period.is_active:
+                db.session.delete(period)
+                db.session.commit()
         elif action == "activate":
             Period.query.update({"is_active": False})
-            period = Period.query.get(request.form.get("period_id"))
+            db.session.flush()
+            period = Period.query.get(int(request.form.get("period_id")))
             if period:
                 period.is_active = True
                 db.session.commit()
         elif action == "close":
-            period = Period.query.get(request.form.get("period_id"))
+            period = Period.query.get(int(request.form.get("period_id")))
             if period:
-                period.end_date = datetime.strptime(request.form.get("end_date"), "%Y-%m-%d").date()
+                end_date_str = request.form.get("end_date", "").strip()
+                if end_date_str:
+                    period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
                 period.is_active = False
                 db.session.commit()
         elif action == "edit":
-            period = Period.query.get(request.form.get("period_id"))
+            period = Period.query.get(int(request.form.get("period_id")))
             if period:
                 name = request.form.get("name", "").strip()
                 start_date_str = request.form.get("start_date", "")
@@ -429,7 +523,7 @@ def admin_payments():
                 db.session.commit()
         return redirect(url_for("admin_payments"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     payments = (
         Payment.query.filter_by(period_id=period.id)
         .order_by(Payment.date.desc())
@@ -474,7 +568,7 @@ def admin_corrections():
                 db.session.commit()
         return redirect(url_for("admin_corrections"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
     corrections = (
         Correction.query.filter_by(period_id=period.id)
         .order_by(Correction.date.desc())
@@ -501,28 +595,43 @@ def ho():
 
         if action == "add_event":
             name = request.form.get("name", "").strip()
-            total_cost = float(request.form.get("total_cost", 0))
+            base_cost = float(request.form.get("total_cost", 0) or 0)
             distribution_type = request.form.get("distribution_type", "equal_all")
             notes = request.form.get("notes", "").strip()
             ev_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
 
+            beer_product_id = request.form.get("beer_product_id") or None
+            beer_quantity = request.form.get("beer_quantity") or None
+            beer_cost = 0.0
+            if beer_product_id and beer_quantity:
+                beer_product_id = int(beer_product_id)
+                beer_quantity = int(beer_quantity)
+                bp = Product.query.get(beer_product_id)
+                if bp:
+                    beer_cost = bp.price * beer_quantity
+            else:
+                beer_product_id = None
+                beer_quantity = None
+
             event = HOEvent(
                 period_id=period.id,
                 name=name,
-                total_cost=total_cost,
+                total_cost=base_cost + beer_cost,
                 distribution_type=distribution_type,
                 notes=notes,
                 date=ev_date,
+                beer_product_id=beer_product_id,
+                beer_quantity=beer_quantity,
             )
             db.session.add(event)
             db.session.flush()  # get event.id
 
             # Verdeling instellen
             if distribution_type in ("equal_selected", "manual"):
-                users = User.query.filter_by(is_active=True).all()
+                users = User.query.all()
                 for u in users:
                     field = f"share_{u.id}"
-                    if distribution_type == "equal_selected" and field in request.form:
+                    if distribution_type == "equal_selected" and f"select_{u.id}" in request.form:
                         share = HOEventShare(ho_event_id=event.id, user_id=u.id, amount=0)
                         db.session.add(share)
                     elif distribution_type == "manual":
@@ -543,12 +652,13 @@ def ho():
 
         return redirect(url_for("ho"))
 
-    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
+    users = User.query.order_by(User.sort_order, User.name).all()
+    products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
     ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc()).all()
     turfverlies = get_total_turfverlies(period.id)
     inventory = get_inventory_data(period.id)
 
-    # HO aandeel per persoon
+    active_user_ids = [u.id for u in users if u.is_active]
     ho_per_user = {u.id: round(get_ho_share_for_user(period.id, u.id), 2) for u in users}
 
     return render_template(
@@ -556,6 +666,8 @@ def ho():
         period=period,
         ho_events=ho_events,
         users=users,
+        products=products,
+        active_user_ids=active_user_ids,
         turfverlies=turfverlies,
         inventory=inventory,
         ho_per_user=ho_per_user,

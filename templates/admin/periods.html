@@ -8,7 +8,7 @@
   </div>
 
   <!-- Nieuwe periode -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4">
     <h2 class="font-semibold mb-3">Nieuwe periode starten</h2>
     <form method="POST" class="flex flex-wrap gap-3 items-end">
       <input type="hidden" name="action" value="add" />
@@ -20,11 +20,39 @@
         <label class="block text-xs text-gray-400 mb-1">Startdatum</label>
         <input name="start_date" type="date" required class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" />
       </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Vorige standen overnemen van</label>
+        <select name="source_period_id" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+          <option value="">— huidige actieve periode —</option>
+          {% for p in periods %}
+          <option value="{{ p.id }}">{{ p.name }}{% if p.is_active %} (actief){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
       <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg font-semibold text-sm btn-press">
         + Starten
       </button>
     </form>
-    <p class="text-xs text-gray-500 mt-2">Let op: de huidige actieve periode wordt gedeactiveerd.</p>
+    <p class="text-xs text-gray-500 mt-2">De eindstand van de gekozen periode wordt de vorige stand voor iedereen in de nieuwe periode.</p>
+  </div>
+
+  <!-- Vorige standen overnemen van een andere periode -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
+    <h2 class="font-semibold mb-1">Vorige standen overnemen voor huidige periode</h2>
+    <p class="text-xs text-gray-500 mb-3">De eindstand van de gekozen periode wordt de beginstand van de actieve periode.</p>
+    <form method="POST" class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="action" value="copy_balances" />
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Overnemen van periode</label>
+        <select name="source_period_id" required class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+          <option value="">— kies periode —</option>
+          {% for p in periods %}{% if not p.is_active %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endif %}{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-semibold text-sm btn-press">Overnemen</button>
+    </form>
   </div>
 
   <!-- Periodes lijst -->
@@ -46,11 +74,17 @@
         </div>
         <div class="flex gap-2 flex-wrap">
           <a href="/rapport/{{ period.id }}" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs btn-press">📊 Rapport</a>
+          <a href="/admin/vorige-stand/{{ period.id }}" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs btn-press">💰 Vorige standen</a>
           {% if not period.is_active %}
           <form method="POST" class="inline">
             <input type="hidden" name="action" value="activate" />
             <input type="hidden" name="period_id" value="{{ period.id }}" />
             <button class="px-3 py-1.5 bg-gray-700 hover:bg-amber-600 rounded-lg text-xs btn-press">Activeren</button>
+          </form>
+          <form method="POST" class="inline" onsubmit="return confirm('Periode &quot;{{ period.name }}&quot; en alle bijbehorende data verwijderen?')">
+            <input type="hidden" name="action" value="delete" />
+            <input type="hidden" name="period_id" value="{{ period.id }}" />
+            <button class="px-3 py-1.5 bg-red-800 hover:bg-red-700 rounded-lg text-xs btn-press">🗑 Verwijderen</button>
           </form>
           {% else %}
           <form method="POST" class="inline flex items-center gap-1">

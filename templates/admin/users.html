@@ -38,6 +38,7 @@
         <div class="font-semibold flex items-center gap-2">
           {{ user.name }}
           {% if not user.is_active %}<span class="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full">inactief</span>{% endif %}
+          {% if not user.participates_in_ho %}<span class="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">geen HO</span>{% endif %}
         </div>
         <div class="text-sm text-gray-400">
           Vorige stand: €{{ '%.2f'|format(user.previous_balance)|replace('.', ',') }}
@@ -66,9 +67,18 @@
           </div>
           <div class="flex items-center gap-2">
             <input type="checkbox" name="is_active" id="active-{{ user.id }}" {% if user.is_active %}checked{% endif %} class="rounded" />
-            <label for="active-{{ user.id }}" class="text-xs text-gray-300">Actief</label>
+            <label for="active-{{ user.id }}" class="text-xs text-gray-300">Actief (kan turven)</label>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="checkbox" name="participates_in_ho" id="ho-{{ user.id }}" {% if user.participates_in_ho %}checked{% endif %} class="rounded" />
+            <label for="ho-{{ user.id }}" class="text-xs text-gray-300">Doet mee aan HO</label>
           </div>
           <button type="submit" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-semibold btn-press">Opslaan</button>
+        </form>
+        <form method="POST" class="mt-2" onsubmit="return confirm('{{ user.name }} verwijderen? Dit kan niet ongedaan worden.')">
+          <input type="hidden" name="action" value="delete" />
+          <input type="hidden" name="user_id" value="{{ user.id }}" />
+          <button class="px-3 py-1.5 bg-red-800 hover:bg-red-700 rounded-lg text-xs font-semibold btn-press">🗑 Verwijderen</button>
         </form>
       </details>
     </div>

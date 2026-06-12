@@ -207,8 +207,8 @@
           <th class="text-right py-2">Eindstand</th>
           <th class="text-right py-2">Gebruikt</th>
           <th class="text-right py-2">Geturfd</th>
-          <th class="text-right py-2 text-red-400">Verlies (st)</th>
-          <th class="text-right py-2 text-red-400">Verlies (€)</th>
+          <th class="text-right py-2">Verlies (st)</th>
+          <th class="text-right py-2">Verlies (€)</th>
         </tr></thead>
         <tbody>
           {% for row in ov.inventory %}
@@ -220,18 +220,22 @@
             <td class="py-2 text-right text-gray-400">{{ row.stock_eind }}</td>
             <td class="py-2 text-right">{{ row.gebruikt }}</td>
             <td class="py-2 text-right text-amber-400">{{ row.geturfd }}</td>
-            <td class="py-2 text-right {% if row.turfverlies_qty > 0 %}text-red-400{% else %}text-gray-600{% endif %}">
-              {{ row.turfverlies_qty if row.turfverlies_qty > 0 else '—' }}
+            <td class="py-2 text-right {% if row.turfverlies_qty < 0 %}text-green-400{% elif row.turfverlies_qty > 0 %}text-red-400{% else %}text-gray-600{% endif %}">
+              {% if row.turfverlies_qty != 0 %}{{ row.turfverlies_qty }}{% else %}—{% endif %}
             </td>
-            <td class="py-2 text-right {% if row.turfverlies_eur > 0 %}text-red-400 font-semibold{% else %}text-gray-600{% endif %}">
-              {% if row.turfverlies_eur > 0 %}€{{ '%.2f'|format(row.turfverlies_eur)|replace('.', ',') }}{% else %}—{% endif %}
+            <td class="py-2 text-right font-semibold {% if row.turfverlies_eur < 0 %}text-green-400{% elif row.turfverlies_eur > 0 %}text-red-400{% else %}text-gray-600{% endif %}">
+              {% if row.turfverlies_eur < 0 %}+€{{ '%.2f'|format(row.turfverlies_eur|abs)|replace('.', ',') }}
+              {% elif row.turfverlies_eur > 0 %}€{{ '%.2f'|format(row.turfverlies_eur)|replace('.', ',') }}
+              {% else %}—{% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot><tr class="border-t border-gray-600 font-semibold">
-          <td colspan="8" class="py-2 text-red-400">Totaal turfverlies</td>
-          <td class="py-2 text-right text-red-400">€{{ '%.2f'|format(ov.turfverlies_total)|replace('.', ',') }}</td>
+          <td colspan="8" class="py-2 {% if ov.turfverlies_total < 0 %}text-green-400{% else %}text-red-400{% endif %}">Totaal turfverlies</td>
+          <td class="py-2 text-right {% if ov.turfverlies_total < 0 %}text-green-400{% else %}text-red-400{% endif %}">
+            {% if ov.turfverlies_total < 0 %}+{% endif %}€{{ '%.2f'|format(ov.turfverlies_total|abs)|replace('.', ',') }}
+          </td>
         </tr></tfoot>
       </table>
     </div>

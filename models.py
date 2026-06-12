@@ -26,6 +26,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
+    participates_in_ho = db.Column(db.Boolean, default=True)
     # Balance carried over from the previous period
     previous_balance = db.Column(db.Float, default=0.0)
 
@@ -106,8 +107,11 @@ class HOEvent(db.Model):
     # 'manual'     = handmatig bedrag per persoon
     distribution_type = db.Column(db.String(20), default="equal_all")
     notes = db.Column(db.String(500), nullable=True)
+    beer_product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True)
+    beer_quantity = db.Column(db.Integer, nullable=True)
 
     shares = db.relationship("HOEventShare", backref="event", lazy=True, cascade="all, delete-orphan")
+    beer_product = db.relationship("Product", foreign_keys=[beer_product_id])
 
 
 class HOEventShare(db.Model):
@@ -117,6 +121,15 @@ class HOEventShare(db.Model):
     ho_event_id = db.Column(db.Integer, db.ForeignKey("ho_events.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     amount = db.Column(db.Float, nullable=False)
+
+
+class PeriodStartBalance(db.Model):
+    """Beginstand per persoon per periode — snapshot zodat rapporten altijd kloppen."""
+    __tablename__ = "period_start_balances"
+    id = db.Column(db.Integer, primary_key=True)
+    period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    balance = db.Column(db.Float, nullable=False)
 
 
 class Payment(db.Model):
