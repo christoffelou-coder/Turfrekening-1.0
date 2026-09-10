@@ -75,7 +75,7 @@
           </div>
           <button type="submit" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-semibold btn-press">Opslaan</button>
         </form>
-        <form method="POST" class="mt-2" onsubmit="return confirm('{{ user.name }} verwijderen? Dit kan niet ongedaan worden.')">
+        <form method="POST" class="mt-2" onsubmit="return confirm('{{ user.name }} én alle turfjes, betalingen, correcties en HO-aandelen van deze persoon definitief verwijderen?\n\nEen eventuele openstaande schuld of tegoed verdwijnt hiermee ook uit de boekhouding — dit is NIET hetzelfde als afboeken/betalen.\n\nDit kan niet ongedaan worden.')">
           <input type="hidden" name="action" value="delete" />
           <input type="hidden" name="user_id" value="{{ user.id }}" />
           <button class="px-3 py-1.5 bg-red-800 hover:bg-red-700 rounded-lg text-xs font-semibold btn-press">🗑 Verwijderen</button>

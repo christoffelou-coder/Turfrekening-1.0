@@ -291,17 +291,20 @@ def admin_users():
             user = User.query.get(request.form.get("user_id"))
             if user:
                 try:
+                    # Verwijder eerst alle gekoppelde financiële data — anders
+                    # blokkeert de database het verwijderen van de gebruiker zelf.
+                    # LET OP: dit wist definitief eventuele openstaande schuld/tegoed.
+                    Tally.query.filter_by(user_id=user.id).delete()
+                    Payment.query.filter_by(user_id=user.id).delete()
+                    Correction.query.filter_by(user_id=user.id).delete()
+                    HOEventShare.query.filter_by(user_id=user.id).delete()
+                    PeriodStartBalance.query.filter_by(user_id=user.id).delete()
                     db.session.delete(user)
                     db.session.commit()
-                    flash(f"{user.name} is verwijderd.", "success")
+                    flash(f"{user.name} en alle bijbehorende data zijn verwijderd.", "success")
                 except IntegrityError:
                     db.session.rollback()
-                    flash(
-                        f"{user.name} kan niet verwijderd worden: er staan nog turfjes, "
-                        f"betalingen of correcties op naam. Zet de gebruiker in plaats "
-                        f"daarvan op 'inactief' via bewerken.",
-                        "error",
-                    )
+                    flash(f"{user.name} kon niet verwijderd worden door een databasefout.", "error")
         return redirect(url_for("admin_users"))
 
     users = User.query.order_by(User.sort_order, User.name).all()
