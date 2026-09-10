@@ -47,6 +47,18 @@
   </nav>
   {% endblock %}
 
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="max-w-3xl mx-auto mt-3 px-4 space-y-2">
+        {% for category, message in messages %}
+          <div class="px-4 py-2.5 rounded-lg text-sm {% if category == 'error' %}bg-red-900/60 text-red-200 border border-red-700{% else %}bg-emerald-900/60 text-emerald-200 border border-emerald-700{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
   <main>
     {% block content %}{% endblock %}
   </main>

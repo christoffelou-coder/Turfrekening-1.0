@@ -1,8 +1,9 @@
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from datetime import date, datetime
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy.exc import IntegrityError
 
 load_dotenv()
 from models import (
@@ -289,8 +290,18 @@ def admin_users():
         elif action == "delete":
             user = User.query.get(request.form.get("user_id"))
             if user:
-                db.session.delete(user)
-                db.session.commit()
+                try:
+                    db.session.delete(user)
+                    db.session.commit()
+                    flash(f"{user.name} is verwijderd.", "success")
+                except IntegrityError:
+                    db.session.rollback()
+                    flash(
+                        f"{user.name} kan niet verwijderd worden: er staan nog turfjes, "
+                        f"betalingen of correcties op naam. Zet de gebruiker in plaats "
+                        f"daarvan op 'inactief' via bewerken.",
+                        "error",
+                    )
         return redirect(url_for("admin_users"))
 
     users = User.query.order_by(User.sort_order, User.name).all()
