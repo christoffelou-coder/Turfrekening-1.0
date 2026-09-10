@@ -87,11 +87,10 @@ def index():
     users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
-    # Huidige stand per persoon
+    # Huidige stand per persoon (bulk — voorkomt N+1 queries)
     user_balances = {}
     if period:
-        for u in users:
-            user_balances[u.id] = get_stand(u, period.id)
+        user_balances = get_stands_bulk(period.id, users)
 
     return render_template(
         "turf.html",
@@ -298,8 +297,7 @@ def admin_users():
     period = get_active_period()
     user_stands = {}
     if period:
-        for u in users:
-            user_stands[u.id] = round(get_stand(u, period.id), 2)
+        user_stands = get_stands_bulk(period.id, users)
     return render_template("admin/users.html", users=users, user_stands=user_stands, period=period)
 
 
