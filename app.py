@@ -657,7 +657,7 @@ def ho():
     inventory = get_inventory_data(period.id)
 
     active_user_ids = [u.id for u in users if u.is_active]
-    ho_per_user = {u.id: round(get_ho_share_for_user(period.id, u.id), 2) for u in users}
+    ho_per_user = get_ho_shares_bulk(period.id, users, turfverlies)
 
     return render_template(
         "ho.html",
