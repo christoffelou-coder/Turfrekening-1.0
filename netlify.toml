@@ -1,2 +1,18 @@
 [build]
+  command = "pip install -r requirements.txt"
+  functions = "netlify/functions"
   publish = "public"
+
+# Alles naar serverless function (frontend + backend)
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/handler"
+  status = 200
+
+# Environment variables
+[build.environment]
+  PYTHONPATH = "/var/task"
+
+# Serverless function settings
+[functions]
+  node_bundler = "none"

@@ -12,3 +12,12 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Netlify
+.netlify/
+netlify/functions/site-packages/
+public/
+
+# Build
+dist/
+build/
