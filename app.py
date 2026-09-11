@@ -88,17 +88,14 @@ def index():
     users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
-    # Huidige stand per persoon (bulk — voorkomt N+1 queries)
-    user_balances = {}
-    if period:
-        user_balances = get_stands_bulk(period.id, users)
+    # Saldo wordt niet meer getoond op het turfscherm (verwarrend zolang
+    # overboekingen niet direct verwerkt zijn) — dus geen stand-berekening meer nodig hier.
 
     return render_template(
         "turf.html",
         period=period,
         users=users,
         products=products,
-        user_balances=user_balances,
     )
 
 

@@ -163,15 +163,10 @@
       flex: 1;
     ">
       {% for user in users %}
-      {% set balance = user_balances.get(user.id, 0) %}
       <div class="user-card" id="user-{{ user.id }}"
            onclick="handleUserClick({{ user.id }}, '{{ user.name }}')">
         <div class="user-name">{{ user.name }}</div>
         <div class="user-count" id="count-{{ user.id }}" style="display:none;">0</div>
-        <div class="user-balance {% if balance >= 0 %}balance-pos{% else %}balance-neg{% endif %}"
-             id="balance-{{ user.id }}" style="display:none;">
-          {% if balance >= 0 %}+{% endif %}€{{ '%.2f'|format(balance)|replace('.', ',') }}
-        </div>
       </div>
       {% endfor %}
     </div>
@@ -209,10 +204,8 @@
       document.querySelectorAll('.user-card').forEach(card => {
         const uid = card.id.replace('user-', '');
         const countEl = document.getElementById('count-' + uid);
-        const balEl   = document.getElementById('balance-' + uid);
         const cnt = counts[uid] || 0;
         if (countEl) { countEl.textContent = cnt; countEl.style.display = cnt > 0 ? 'block' : 'none'; }
-        if (balEl)   balEl.style.display = 'none';
       });
     });
   }
@@ -255,20 +248,10 @@
         countEl.style.display = newCount > 0 ? 'block' : 'none';
       }
 
-      // Update saldo op kaart
-      const balEl = document.getElementById('balance-' + userId);
-      if (balEl) {
-        const stand = data.new_stand;
-        balEl.textContent = (stand >= 0 ? '+' : '') + '€' + stand.toFixed(2).replace('.', ',');
-        balEl.className = 'user-balance ' + (stand >= 0 ? 'balance-pos' : 'balance-neg');
-        balEl.style.display = '';
-      }
-
-      const standStr = (data.new_stand >= 0 ? '+' : '') + '€' + data.new_stand.toFixed(2).replace('.', ',');
       if (qty < 0) {
-        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#ef4444');
+        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#ef4444');
       } else {
-        showToast('✓ Aangeslagen: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName + '  (' + standStr + ')', 2500, '#16a34a');
+        showToast('✓ Aangeslagen: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#16a34a');
       }
     })
     .catch(() => showToast('❌ Verbindingsfout'));
