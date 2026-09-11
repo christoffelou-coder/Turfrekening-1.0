@@ -169,7 +169,7 @@
         <div class="user-name">{{ user.name }}</div>
         <div class="user-count" id="count-{{ user.id }}" style="display:none;">0</div>
         <div class="user-balance {% if balance >= 0 %}balance-pos{% else %}balance-neg{% endif %}"
-             id="balance-{{ user.id }}">
+             id="balance-{{ user.id }}" style="display:none;">
           {% if balance >= 0 %}+{% endif %}€{{ '%.2f'|format(balance)|replace('.', ',') }}
         </div>
       </div>
