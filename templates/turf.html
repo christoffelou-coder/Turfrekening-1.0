@@ -31,6 +31,7 @@
     background: #292929;
   }
   .product-emoji { font-size: 2rem; line-height: 1; }
+  .product-img   { width: 2.5rem; height: 2.5rem; object-fit: contain; border-radius: 0.4rem; }
   .product-name  { font-size: 1rem; font-weight: 600; color: #e5e7eb; margin-top: 0.25rem; }
 
   /* ── Persoon kaarten ── */
@@ -136,7 +137,11 @@
       {% for product in products %}
       <div class="product-btn" id="product-{{ product.id }}"
            onclick="selectProduct({{ product.id }}, '{{ product.name }}', '{{ product.emoji }}')">
+        {% if product.image_url %}
+        <img src="{{ product.image_url }}" alt="{{ product.name }}" class="product-img" />
+        {% else %}
         <div class="product-emoji">{{ product.emoji }}</div>
+        {% endif %}
         <div class="product-name">{{ product.name }}</div>
       </div>
       {% endfor %}
