@@ -734,11 +734,11 @@ def _scheduled_sync():
         print(f"[Sheets sync] Fout: {e}")
 
 
+create_tables()
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(_scheduled_sync, "cron", hour=2, minute=0)
+scheduler.start()
+
 if __name__ == "__main__":
-    create_tables()
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_scheduled_sync, "cron", hour=2, minute=0)
-    scheduler.start()
-
     app.run(host="0.0.0.0", port=8080, debug=True, use_reloader=False)
