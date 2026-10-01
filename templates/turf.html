@@ -48,10 +48,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 80px;
+    min-height: 0;
+    overflow: hidden;
     box-sizing: border-box;
   }
   .user-card:active { transform: scale(0.93); }
+
+  /* dvh = zichtbare hoogte; 100vh valt op iPhone onder de browserbalken */
+  .turf-screen { height: 100vh; height: 100dvh; }
   .user-card.subtract-mode { border-color: #ef4444 !important; }
 
   .user-name  { font-size: 1.1rem; font-weight: 600; color: #f3f4f6; }
@@ -104,7 +108,7 @@
 {% endblock %}
 
 {% block content %}
-<div style="height:100vh; display:flex; flex-direction:column; background:#030712; overflow:hidden;">
+<div class="turf-screen" style="display:flex; flex-direction:column; background:#030712; overflow:hidden;">
 
   <!-- ── Header ── -->
   <header style="display:flex; align-items:center; justify-content:space-between; padding:0.65rem 1rem; background:#111827; border-bottom:1px solid #1f2937; flex-shrink:0;">
@@ -156,8 +160,8 @@
     <span id="subtractLabel" style="display:none; background:#ef4444; color:white; font-size:0.68rem; padding:0.15rem 0.5rem; border-radius:0.4rem; font-weight:600;">CORRECTIE</span>
   </div>
 
-  <!-- ── Personen: 5×3 zichtbaar, daarna zijwaarts scrollen ── -->
-  <div class="scroll-x" style="flex:1; padding:0.75rem; display:flex; align-items:stretch;">
+  <!-- ── Personen: rijen passend bij schermhoogte (max 5), 3 kolommen zichtbaar, daarna zijwaarts scrollen ── -->
+  <div class="scroll-x" id="usersWrap" style="flex:1; min-height:0; padding:0.75rem; display:flex; align-items:stretch;">
     <div id="usersGrid" style="
       display: grid;
       grid-template-rows: repeat(5, 1fr);
@@ -183,6 +187,24 @@
 <div id="toast"></div>
 
 <script>
+  const MIN_CARD_PX = 72;
+  const MAX_ROWS = 5;
+
+  function fitGrid() {
+    const grid = document.getElementById('usersGrid');
+    const wrap = document.getElementById('usersWrap');
+    if (!grid || !wrap) return;
+    const cs = getComputedStyle(wrap);
+    const h = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const gap = parseFloat(getComputedStyle(grid).rowGap) || 8;
+    const rows = Math.max(1, Math.min(MAX_ROWS, Math.floor((h + gap) / (MIN_CARD_PX + gap))));
+    grid.style.gridTemplateRows = 'repeat(' + rows + ', 1fr)';
+  }
+  fitGrid();
+  window.addEventListener('resize', fitGrid);
+  window.addEventListener('orientationchange', () => setTimeout(fitGrid, 200));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitGrid);
+
   let selectedProductId = null;
   let selectedProductName = null;
   let selectedProductEmoji = null;
