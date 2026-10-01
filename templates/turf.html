@@ -206,6 +206,7 @@
     fetch('/api/product-counts/' + productId)
     .then(r => r.json())
     .then(counts => {
+      if (selectedProductId !== productId) return;
       document.querySelectorAll('.user-card').forEach(card => {
         const uid = card.id.replace('user-', '');
         const countEl = document.getElementById('count-' + uid);
@@ -235,31 +236,39 @@
     addTally(userId, userName, qty);
   }
 
+  function bumpCount(userId, delta) {
+    const countEl = document.getElementById('count-' + userId);
+    if (!countEl) return;
+    const newCount = Math.max(0, parseInt(countEl.textContent || '0') + delta);
+    countEl.textContent = newCount;
+    countEl.style.display = newCount > 0 ? 'block' : 'none';
+  }
+
   function addTally(userId, userName, qty) {
+    const productId = selectedProductId;
+    const label = selectedProductEmoji + ' ' + selectedProductName;
+
+    // Direct tonen; opslaan gebeurt op de achtergrond
+    bumpCount(userId, qty);
+    if (qty < 0) {
+      showToast('↩ Gecorrigeerd: ' + userName + ' — ' + label, 2500, '#ef4444');
+    } else {
+      showToast('✓ Aangeslagen: ' + userName + ' — ' + label, 2500, '#16a34a');
+    }
+
+    const revert = (msg) => {
+      if (selectedProductId === productId) bumpCount(userId, -qty);
+      showToast('❌ ' + msg + ' (' + userName + ' — ' + label + ' niet opgeslagen)', 4000, '#ef4444');
+    };
+
     fetch('/api/tally', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, product_id: selectedProductId, quantity: qty })
+      body: JSON.stringify({ user_id: userId, product_id: productId, quantity: qty })
     })
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) { showToast('❌ ' + data.error); return; }
-
-      // Update turfcount op kaart
-      const countEl = document.getElementById('count-' + userId);
-      if (countEl) {
-        const newCount = Math.max(0, parseInt(countEl.textContent || '0') + qty);
-        countEl.textContent = newCount;
-        countEl.style.display = newCount > 0 ? 'block' : 'none';
-      }
-
-      if (qty < 0) {
-        showToast('↩ Gecorrigeerd: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#ef4444');
-      } else {
-        showToast('✓ Aangeslagen: ' + userName + ' — ' + selectedProductEmoji + ' ' + selectedProductName, 2500, '#16a34a');
-      }
-    })
-    .catch(() => showToast('❌ Verbindingsfout'));
+    .then(r => r.json().then(data => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => { if (!ok || data.error) revert(data.error || 'Fout'); })
+    .catch(() => revert('Verbindingsfout'));
   }
 
   function showToast(msg, duration = 2000, color = null) {

@@ -43,6 +43,7 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 280}
 app.secret_key = os.environ.get("SECRET_KEY", "turfrekening-secret-2024")
 
 db.init_app(app)
@@ -110,40 +111,28 @@ def add_tally():
     if not period:
         return jsonify({"error": "Geen actieve periode"}), 400
 
-    user = User.query.get(data["user_id"])
-    product = Product.query.get(data["product_id"])
-    if not user or not product:
-        return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
-
     tally = Tally(
         period_id=period.id,
-        user_id=user.id,
-        product_id=product.id,
+        user_id=int(data["user_id"]),
+        product_id=int(data["product_id"]),
         quantity=data.get("quantity", 1),
     )
     db.session.add(tally)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
 
-    new_stand = get_stand(user, period.id)
-    return jsonify({
-        "ok": True,
-        "tally_id": tally.id,
-        "user": user.name,
-        "product": product.name,
-        "quantity": tally.quantity,
-        "new_stand": round(new_stand, 2),
-    })
+    return jsonify({"ok": True, "tally_id": tally.id})
 
 
 @app.route("/api/tally/<int:tally_id>", methods=["DELETE"])
 def undo_tally(tally_id):
     tally = Tally.query.get_or_404(tally_id)
-    user = tally.user
-    period_id = tally.period_id
     db.session.delete(tally)
     db.session.commit()
-    new_stand = get_stand(user, period_id)
-    return jsonify({"ok": True, "new_stand": round(new_stand, 2)})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/last-tally")
@@ -176,11 +165,13 @@ def product_counts(product_id):
     period = get_active_period()
     if not period:
         return jsonify({})
-    tally_map = get_tallied_per_user_product(period.id)
-    counts = {}
-    for user_id, products in tally_map.items():
-        counts[str(user_id)] = products.get(product_id, 0)
-    return jsonify(counts)
+    rows = (
+        db.session.query(Tally.user_id, db.func.sum(Tally.quantity))
+        .filter(Tally.period_id == period.id, Tally.product_id == product_id)
+        .group_by(Tally.user_id)
+        .all()
+    )
+    return jsonify({str(uid): int(total or 0) for uid, total in rows})
 
 
 @app.route("/api/balance/<int:user_id>")
