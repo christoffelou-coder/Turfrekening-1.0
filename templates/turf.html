@@ -160,8 +160,8 @@
     <span id="subtractLabel" style="display:none; background:#ef4444; color:white; font-size:0.68rem; padding:0.15rem 0.5rem; border-radius:0.4rem; font-weight:600;">CORRECTIE</span>
   </div>
 
-  <!-- ── Personen: rijen passend bij schermhoogte (max 5), 3 kolommen zichtbaar, daarna zijwaarts scrollen ── -->
-  <div class="scroll-x" id="usersWrap" style="flex:1; min-height:0; padding:0.75rem; display:flex; align-items:stretch;">
+  <!-- ── Personen: rijen en kolombreedte worden in fitGrid() berekend; extra personen via zijwaarts scrollen ── -->
+  <div class="scroll-x" id="usersWrap" style="flex:1; min-height:0; overflow-y:hidden; padding:0.75rem; display:flex; align-items:stretch;">
     <div id="usersGrid" style="
       display: grid;
       grid-template-rows: repeat(5, 1fr);
@@ -188,21 +188,38 @@
 
 <script>
   const MIN_CARD_PX = 72;
-  const MAX_ROWS = 5;
+  const MAX_ROWS = 4;
+
+  const VISIBLE_COLS = 3;
+  const PEEK = 0.3;  // deel van de 4e kolom dat zichtbaar is als hint om naar rechts te vegen
 
   function fitGrid() {
+    // Mobiele browsers tellen hun eigen balken soms mee in 100vh/100dvh; visualViewport is wat je echt ziet
+    const screen = document.querySelector('.turf-screen');
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    if (screen) screen.style.height = vh + 'px';
+    window.scrollTo(0, 0);
+
     const grid = document.getElementById('usersGrid');
     const wrap = document.getElementById('usersWrap');
     if (!grid || !wrap) return;
     const cs = getComputedStyle(wrap);
     const h = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const gap = parseFloat(getComputedStyle(grid).rowGap) || 8;
+
     const rows = Math.max(1, Math.min(MAX_ROWS, Math.floor((h + gap) / (MIN_CARD_PX + gap))));
+    const cols = Math.ceil(grid.children.length / rows);
+    const shown = cols > VISIBLE_COLS ? VISIBLE_COLS + PEEK : VISIBLE_COLS;
+    const colW = (w - gap * Math.ceil(shown - 1)) / shown;
+
     grid.style.gridTemplateRows = 'repeat(' + rows + ', 1fr)';
+    grid.style.gridAutoColumns = colW + 'px';
   }
   fitGrid();
+  window.addEventListener('load', fitGrid);
   window.addEventListener('resize', fitGrid);
-  window.addEventListener('orientationchange', () => setTimeout(fitGrid, 200));
+  window.addEventListener('orientationchange', () => setTimeout(fitGrid, 300));
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitGrid);
 
   let selectedProductId = null;
