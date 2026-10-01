@@ -736,7 +736,10 @@ def _scheduled_sync():
         print(f"[Sheets sync] Fout: {e}")
 
 
-create_tables()
+try:
+    create_tables()
+except Exception as e:
+    print(f"[create_tables] Fout bij opstarten: {e}")
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(_scheduled_sync, "cron", hour=2, minute=0)
