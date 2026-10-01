@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Turfrekening — een drank-bijhoudsysteem voor een studentenhuis. Gebruikt op een iPad om bij te houden wie wat heeft gedronken. Data staat in Supabase, de app draait op Netlify.
+Turfrekening — een drank-bijhoudsysteem voor een studentenhuis. Gebruikt op een iPad om bij te houden wie wat heeft gedronken. Data staat in Supabase, de app draait op Railway.
 
 ## Lokaal draaien
 
@@ -19,17 +19,17 @@ De app verbindt automatisch met Supabase als `DATABASE_URL` in `.env` staat. Zon
 
 ## Deploy workflow
 
-**Lokaal → GitHub → Netlify (automatisch)**
+**Lokaal → GitHub → Railway (automatisch)**
 
 ```bash
 git add .
 git commit -m "omschrijving"
-git push origin main   # Netlify deployt automatisch (~1-2 min)
+git push origin main   # Railway deployt automatisch
 ```
 
 GitHub repo: `https://github.com/christoffelou-coder/Turfrekening-1.0`
 
-Netlify draait Flask via serverless functions (`netlify/functions/app.py` + `serverless-wsgi`). De `netlify.toml` stuurt alle requests door naar die function.
+Railway draait de Flask app rechtstreeks.
 
 ## Architectuur
 
@@ -61,7 +61,7 @@ Tabs die gesynchroniseerd worden: **Overview** (C/D/E/F/G/I), **Invullen** (voor
 
 **gspread v6 let op:** argument volgorde is `ws.update(values, range_name)` — NIET `ws.update(range_name, values)`.
 
-Credentials: `google_credentials.json` (niet in git). Op Netlify via env var `GOOGLE_CREDENTIALS_JSON`.
+Credentials: `google_credentials.json` (niet in git). Op Railway via env var `GOOGLE_CREDENTIALS_JSON`.
 
 Manueel triggeren: `POST /api/sync-sheets`
 
@@ -74,7 +74,7 @@ Manueel triggeren: `POST /api/sync-sheets`
 |---|---|
 | `DATABASE_URL` | Supabase pooler URL (eu-west-1) |
 | `SECRET_KEY` | Flask session key |
-| `GOOGLE_CREDENTIALS_JSON` | Service account JSON als string (Netlify) |
+| `GOOGLE_CREDENTIALS_JSON` | Service account JSON als string (Railway) |
 
 Supabase connectie: `aws-0-eu-west-1.pooler.supabase.com:5432`, gebruikersnaam formaat: `postgres.[project-id]`
 
