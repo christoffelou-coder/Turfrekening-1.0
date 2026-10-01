@@ -35,7 +35,9 @@ app = Flask(__name__)
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
     # Railway/Supabase geeft soms 'postgres://' maar SQLAlchemy wil 'postgresql://'
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+    database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 else:
     database_url = f"sqlite:///{os.path.join(BASE_DIR, 'turfrekening.db')}"
 
