@@ -24,7 +24,7 @@
 
   <section>
     <p class="turf-label" id="hint">Wat pak je?</p>
-    <div class="product-row" id="products">
+    <div class="product-row scroller" id="products">
       {% for product in products %}
       <button type="button" class="product-btn" data-id="{{ product.id }}" data-name="{{ product.name }}">
         {% if product.image_url %}<img class="pimg" src="{{ product.image_url }}" alt="">{% else %}<span class="emoji">{{ product.emoji }}</span>{% endif %}
@@ -36,6 +36,7 @@
 
   <section style="flex:1; min-height:0; display:flex; flex-direction:column;">
     <p class="turf-label">Wie?</p>
+    <div class="scroller user-scroll" id="userScroll">
     <div class="user-grid locked" id="users">
       {% for user in users %}
       <button type="button" class="user-btn" data-id="{{ user.id }}" data-name="{{ user.name }}">
@@ -43,6 +44,7 @@
         <span class="ucount"></span>
       </button>
       {% endfor %}
+    </div>
     </div>
   </section>
 
@@ -53,14 +55,31 @@
 (function () {
   // iPad/Safari: 100vh telt de browserbalken mee; visualViewport is wat je echt ziet
   const root = document.querySelector('.turf');
-  function fitHeight() {
+  const ROWS = 3, GAP = 12;
+  const userScroll = document.getElementById('userScroll');
+  const productRow = document.getElementById('products');
+  function updateMore(el) {
+    if (el) el.classList.toggle('more', el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }
+  function fit() {
+    const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth;
     const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     if (root) root.style.height = h + 'px';
+    root.style.setProperty('--ptile', Math.max(100, Math.min(180, Math.round(w / 5.2), Math.round(h * 0.2))) + 'px');
+    if (userScroll) {
+      // vierkante tegels: 3 rijen over de beschikbare hoogte
+      const avail = userScroll.clientHeight - 4;
+      const tile = Math.max(110, Math.min(300, Math.floor((avail - (ROWS - 1) * GAP) / ROWS)));
+      root.style.setProperty('--utile', tile + 'px');
+    }
+    updateMore(userScroll); updateMore(productRow);
   }
-  fitHeight();
-  window.addEventListener('resize', fitHeight);
-  window.addEventListener('orientationchange', () => setTimeout(fitHeight, 300));
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitHeight);
+  fit();
+  window.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 300));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
+  [userScroll, productRow].forEach(el => el && el.addEventListener('scroll', () => updateMore(el), { passive: true }));
 })();
 (function () {
   const csrf = document.querySelector('meta[name=csrf-token]').content;
