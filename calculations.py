@@ -7,6 +7,7 @@ from models import (
     InventorySnapshot, HOEvent, HOEventShare, Payment, Correction,
     PeriodStartBalance
 )
+from datetime import date
 from sqlalchemy import func
 
 
@@ -422,4 +423,23 @@ def get_period_overview(period_id):
         "total_ho": total_ho,
         "ho_per_person": ho_per_person,
         "active_count": active_count,
+    }
+
+
+# ─── Dashboard-status ────────────────────────────────────────────────────────
+
+def get_period_status(period):
+    """Samenvatting van de actieve periode voor het admin-dashboard."""
+    overview = get_period_overview(period.id)
+    rows = overview["user_rows"]
+    standalone = [r for r in overview["inventory"]]
+    end_counted = {
+        s.product_id for s in InventorySnapshot.query.filter_by(period_id=period.id, snapshot_type="end").all()
+    }
+    return {
+        "days": max((date.today() - period.start_date).days, 0),
+        "geturfd": sum(r["geturfd"] for r in rows),
+        "betaald": sum(r["overgemaakt"] for r in rows),
+        "ho_events": len(overview["ho_events"]),
+        "inventory_done": bool(standalone) and all(r["product"].id in end_counted for r in standalone),
     }

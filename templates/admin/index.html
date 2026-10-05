@@ -1,67 +1,69 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% from "_icons.html" import icon %}
+{% block title %}Admin · Turfrekening{% endblock %}
 {% block content %}
-<div class="max-w-4xl mx-auto px-4 py-6">
-  <h1 class="text-2xl font-bold mb-6 text-amber-400">⚙ Admin</h1>
+<div class="page">
+  <div class="page-head"><h1>Admin</h1></div>
 
   {% if period %}
-  <div class="bg-gray-800 rounded-xl p-4 mb-6 border border-gray-700">
-    <div class="text-sm text-gray-400">Actieve periode</div>
-    <div class="text-lg font-bold">{{ period.name }}</div>
-    <div class="text-sm text-gray-400">Gestart: {{ period.start_date.strftime('%d %b %Y') }}</div>
-  </div>
+  <section class="card" aria-label="Actieve periode">
+    <div class="row" style="justify-content:space-between; align-items:flex-start;">
+      <div>
+        <div class="text-muted text-small">Actieve periode</div>
+        <h2 style="font-size:22px;">{{ period.name }}</h2>
+        <div class="text-muted text-small">Gestart op {{ period.start_date.strftime('%d-%m-%Y') }} · {{ status.days }} dagen</div>
+      </div>
+      <a href="/admin/periods" class="btn btn-primary">Periode afsluiten</a>
+    </div>
+    <div class="grid grid-3" style="margin-top:var(--space-4);">
+      <div class="stat"><div class="label">Geturfd</div><div class="value">{{ status.geturfd|euro }}</div></div>
+      <div class="stat"><div class="label">Betaald</div><div class="value">{{ status.betaald|euro }}</div></div>
+      <div class="stat"><div class="label">Voorraad geteld</div>
+        <div class="value {{ '' if status.inventory_done else 'text-muted' }}" style="{{ '' if status.inventory_done else 'color:var(--accent)' }}">{{ 'Ja' if status.inventory_done else 'Nog niet' }}</div></div>
+    </div>
+  </section>
   {% else %}
-  <div class="bg-red-900/40 border border-red-700 rounded-xl p-4 mb-6">
-    <p class="text-red-300 font-semibold">Geen actieve periode!</p>
-    <a href="/admin/periods" class="text-amber-400 text-sm underline">Maak een periode aan →</a>
-  </div>
+  <section class="card">
+    <p class="neg strong" style="margin:0 0 var(--space-2);">Geen actieve periode</p>
+    <a href="/admin/periods" class="btn">Periode aanmaken</a>
+  </section>
   {% endif %}
 
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-    <a href="/admin/users" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">👥</div>
-      <div class="font-bold">Gebruikers</div>
-      <div class="text-gray-400 text-sm">{{ users|selectattr('is_active')|list|length }} actief</div>
+  <h2 class="group-title" style="font-weight:400;">Dagelijks</h2>
+  <div class="grid grid-3">
+    <a href="/admin/payments" class="tile">
+      {{ icon('wallet') }}<span class="title">Betalingen en correcties</span>
+      <span class="desc">Overboekingen invoeren of een stand handmatig aanpassen</span>
+      <span class="status">{% if status %}{{ status.betaald|euro }} betaald{% else %}—{% endif %}</span>
     </a>
-    <a href="/admin/products" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">📦</div>
-      <div class="font-bold">Producten</div>
-      <div class="text-gray-400 text-sm">{{ products|selectattr('is_active')|list|length }} actief</div>
+    <a href="/admin/inventory" class="tile">
+      {{ icon('package') }}<span class="title">Voorraad</span>
+      <span class="desc">Inkoop toevoegen en aan het eind de koelkast tellen</span>
+      <span class="status {{ '' if status and status.inventory_done else 'todo' }}">{{ 'Eindtelling gedaan' if status and status.inventory_done else 'Eindtelling nog niet gedaan' }}</span>
     </a>
-    <a href="/admin/inventory" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">🏪</div>
-      <div class="font-bold">Voorraad</div>
-      <div class="text-gray-400 text-sm">Begin/eind + inkoop</div>
+    <a href="/ho" class="tile">
+      {{ icon('home') }}<span class="title">Gedeelde kosten (HO)</span>
+      <span class="desc">Uitgaven voor het hele huis, zoals limonade of een feest</span>
+      <span class="status">{{ status.ho_events if status else 0 }} {{ 'post' if status and status.ho_events == 1 else 'posten' }}</span>
     </a>
-    <a href="/admin/payments" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">💸</div>
-      <div class="font-bold">Overboekingen</div>
-      <div class="text-gray-400 text-sm">Betalingen bijhouden</div>
+  </div>
+
+  <h2 class="group-title" style="font-weight:400;">Instellingen</h2>
+  <div class="grid grid-3">
+    <a href="/admin/users" class="tile">
+      {{ icon('users') }}<span class="title">Bewoners</span>
+      <span class="desc">Wie er op het turfscherm staat en wie vertrokken is</span>
+      <span class="status">{{ users|selectattr('is_active')|list|length }} actief</span>
     </a>
-    <a href="/admin/corrections" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">✏️</div>
-      <div class="font-bold">Correcties</div>
-      <div class="text-gray-400 text-sm">Handmatige aanpassingen</div>
+    <a href="/admin/products" class="tile">
+      {{ icon('tag') }}<span class="title">Producten en prijzen</span>
+      <span class="desc">Wat je kunt turfen en wat het kost</span>
+      <span class="status">{{ products|selectattr('is_active')|list|length }} actief</span>
     </a>
-    <a href="/admin/periods" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">📅</div>
-      <div class="font-bold">Periodes</div>
-      <div class="text-gray-400 text-sm">{{ periods|length }} periodes</div>
-    </a>
-    <a href="/ho" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">🏠</div>
-      <div class="font-bold">HO Beheer</div>
-      <div class="text-gray-400 text-sm">Gedeelde kosten</div>
-    </a>
-    <a href="/admin/vorige-stand" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">💰</div>
-      <div class="font-bold">Vorige standen</div>
-      <div class="text-gray-400 text-sm">Beginstand per persoon</div>
-    </a>
-    <a href="/rapport" class="bg-amber-600 hover:bg-amber-500 border border-amber-500 rounded-xl p-5 transition">
-      <div class="text-3xl mb-2">📊</div>
-      <div class="font-bold">Maandrapport</div>
-      <div class="text-gray-200 text-sm">Overzicht genereren</div>
+    <a href="/admin/periods" class="tile">
+      {{ icon('calendar') }}<span class="title">Periodes en rapporten</span>
+      <span class="desc">Afgesloten periodes terugkijken en rapporten downloaden</span>
+      <span class="status">{{ periods|rejectattr('is_active')|list|length }} afgesloten</span>
     </a>
   </div>
 </div>

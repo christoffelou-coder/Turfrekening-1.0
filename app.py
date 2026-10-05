@@ -15,11 +15,12 @@ from calculations import (
     get_active_period, get_stand, get_geturfd_cost, get_payments_total,
     get_corrections_total, get_ho_share_for_user, get_period_overview,
     get_inventory_data, get_total_turfverlies, get_tallied_per_user_product,
-    get_ho_shares_bulk, get_stands_bulk
+    get_ho_shares_bulk, get_stands_bulk, get_period_status
 )
 
 from models import PeriodStartBalance
 from auth import bp as auth_bp, admin_required
+from filters import euro, euro_cls
 from forms import FormError, parse_date, parse_float, parse_int
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +61,18 @@ db.init_app(app)
 migrate = Migrate(app, db)
 csrf = CSRFProtect(app)
 app.register_blueprint(auth_bp)
+app.jinja_env.filters["euro"] = euro
+app.jinja_env.filters["euro_cls"] = euro_cls
+
+
+@app.context_processor
+def _globals():
+    css = os.path.join(BASE_DIR, "static", "css", "app.css")
+    try:
+        version = int(os.path.getmtime(css))
+    except OSError:
+        version = 0
+    return {"css_version": version}
 
 
 @app.errorhandler(FormError)
@@ -232,7 +245,9 @@ def admin():
     users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.order_by(Product.sort_order).all()
     periods = Period.query.order_by(Period.start_date.desc()).all()
-    return render_template("admin/index.html", period=period, users=users, products=products, periods=periods)
+    status = get_period_status(period) if period else None
+    return render_template("admin/index.html", period=period, users=users, products=products,
+                           periods=periods, status=status)
 
 
 # Vorige standen
