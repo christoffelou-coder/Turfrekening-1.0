@@ -108,3 +108,10 @@ def test_eerste_periode_aanmaken_zonder_actieve(admin, basis):
     db.session.commit()
     admin.post("/admin/periods", data={"action": "first", "name": "Start", "start_date": "2026-11-01"})
     assert Period.query.filter_by(is_active=True).one().name == "Start"
+
+
+def test_afsluitpagina_werkt_bij_startdatum_in_de_toekomst(admin, basis):
+    basis["period"].start_date = date(2999, 1, 1)
+    db.session.commit()
+    r = admin.get("/admin/periods/close")
+    assert r.status_code == 200 and "toekomst" in r.get_data(as_text=True)

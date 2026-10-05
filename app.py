@@ -412,13 +412,19 @@ def admin_close_period():
         flash(f"'{period.name}' is afgesloten en bevroren. '{new_period.name}' is gestart.", "success")
         return redirect(url_for("rapport", period_id=period.id))
 
-    end_default = date.today()
+    end_default = max(date.today(), period.start_date)
     ov = compute_period(period.id)
+    try:
+        date_warnings = check_period_dates(period.start_date, end_default, exclude_id=period.id)
+    except PeriodError as err:
+        date_warnings = [str(err)]
+    if period.start_date > date.today():
+        date_warnings.append("De startdatum van deze periode ligt in de toekomst. Pas die eerst aan bij Periodes als dat een vergissing is.")
     return render_template(
         "admin/close_period.html", period=period, overview=ov,
         blockers=close_blockers(ov), end_default=end_default.isoformat(),
         next_name=default_next_name(end_default), today=date.today().isoformat(),
-        date_warnings=check_period_dates(period.start_date, end_default, exclude_id=period.id),
+        date_warnings=date_warnings,
     )
 
 
