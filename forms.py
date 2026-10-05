@@ -1,5 +1,5 @@
 """Kleine parse-helpers voor formulierinvoer. Ze gooien FormError met een nette melding."""
-from datetime import date, datetime
+from datetime import datetime
 
 
 class FormError(ValueError):

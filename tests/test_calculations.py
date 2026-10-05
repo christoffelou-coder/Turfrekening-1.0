@@ -11,7 +11,7 @@ from money import split_even
 
 def rows(period_id):
     ov = compute_period(period_id)
-    return {r["user"].name: r for r in ov["user_rows"]}, ov
+    return {r["user"]["name"]: r for r in ov["user_rows"]}, ov
 
 
 def tally(basis, user, product, qty, price=None):
@@ -147,7 +147,7 @@ def test_gedeactiveerd_product_blijft_meetellen(basis):
     db.session.commit()
     _, ov = rows(p.id)
     assert ov["turfverlies_total"] == 2000
-    assert basis["pils"] in ov["products"]
+    assert basis["pils"].id in [p["id"] for p in ov["products"]]
 
 
 def test_nieuwe_bewoner_niet_in_oude_periode(basis):

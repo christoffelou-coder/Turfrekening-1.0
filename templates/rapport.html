@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Rapport · Turfrekening{% endblock %}
-{% block legacy_css %}{% endblock %}
 
 {% block content %}
 <div class="page page-wide">
@@ -10,7 +9,7 @@
     <div class="row">
       <select class="input" aria-label="Periode" onchange="window.location='/rapport/'+this.value">
         {% for p in periods %}
-        <option value="{{ p.id }}" {% if p.id == current_period_id %}selected{% endif %}>{{ p.name }}{% if p.is_active %} (lopend){% endif %}</option>
+        <option value="{{ p.id }}" {% if p.id == current_period_id %}selected{% endif %}>{{ p.name }}{% if p.is_active %} (lopend){% elif not p.closed_at %} (historisch){% endif %}</option>
         {% endfor %}
       </select>
       <button type="button" class="btn" onclick="window.print()">Afdrukken</button>
@@ -42,14 +41,21 @@
           </div>
         </div>
         <div>
-          {% if ov.period.is_active %}
+          {% if ov.state == 'closed' %}
+          <span class="badge">Afgesloten op {{ ov.period.closed_at.strftime('%d-%m-%Y') }}</span>
+          {% elif ov.state == 'open' %}
           <span class="badge badge-accent">Lopend, cijfers voorlopig</span>
           {% else %}
-          <span class="badge">Afgesloten{% if ov.period.end_date %} op {{ ov.period.end_date.strftime('%d-%m-%Y') }}{% endif %}</span>
+          <span class="badge badge-accent">Historisch, niet bevroren</span>
           {% endif %}
         </div>
       </div>
-      {% if not ov.inventory_complete %}
+      {% if ov.state == 'closed' %}
+      <p class="text-muted text-small" style="margin:var(--space-3) 0 0;">Dit rapport is bevroren bij het afsluiten en verandert niet meer.</p>
+      {% elif ov.state == 'historic' %}
+      <p class="text-small" style="color:var(--accent); margin:var(--space-3) 0 0;">Deze periode is afgesloten vóór rapporten werden bevroren. De cijfers komen uit de actuele gegevens en kunnen afwijken van het officiële rapport.</p>
+      {% endif %}
+      {% if ov.state != 'closed' and not ov.inventory_complete %}
       <p class="text-small" style="color:var(--accent); margin:var(--space-3) 0 0;">Voorraad nog niet (helemaal) geteld: het turfverlies is voorlopig en wordt nog niet verdeeld.</p>
       {% endif %}
       <div class="grid grid-4" style="margin-top:var(--space-4);">
@@ -75,7 +81,7 @@
               <td class="num">{{ row.vorige_stand|euro(sign=True) }}</td>
               <td class="num">{{ row.overgemaakt|euro(sign=True) }}</td>
               <td class="num">{{ (-row.geturfd)|euro }}</td>
-              <td class="num">{{ (-row.ho)|euro }}</td>
+              <td class="num">{{ (-row.ho)|euro(sign=True) }}</td>
               <td class="num">{{ row.correctie|euro(sign=True) }}</td>
               <td class="num strong {{ row.stand|euro_cls }}">{{ row.stand|euro(sign=True) }}</td>
             </tr>
@@ -86,7 +92,7 @@
             <td class="num">{{ t.vorige_stand|euro(sign=True) }}</td>
             <td class="num">{{ t_betaald|euro(sign=True) }}</td>
             <td class="num">{{ (-t_geturfd)|euro }}</td>
-            <td class="num">{{ (-t_ho)|euro }}</td>
+            <td class="num">{{ (-t_ho)|euro(sign=True) }}</td>
             <td class="num">{{ t.correctie|euro(sign=True) }}</td>
             <td class="num {{ t_stand|euro_cls }}">{{ t_stand|euro(sign=True) }}</td>
           </tr></tfoot>

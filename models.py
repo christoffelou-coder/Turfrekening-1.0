@@ -11,6 +11,8 @@ class Period(db.Model):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=True)
     is_active = db.Column(db.Boolean, default=True)
+    # Gezet bij afsluiten: vanaf dan is het rapport bevroren (PeriodReport) en kan er niets meer wijzigen
+    closed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     tallies = db.relationship("Tally", backref="period", lazy=True)
@@ -25,11 +27,10 @@ class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    # is_active = staat op het turfscherm en in nieuwe periodes; False = vertrokken
     is_active = db.Column(db.Boolean, default=True)
+    left_at = db.Column(db.Date, nullable=True)
     participates_in_ho = db.Column(db.Boolean, default=True)
-    # Balance carried over from the previous period
-    previous_balance = db.Column(db.Float, default=0.0)
-
     sort_order = db.Column(db.Integer, default=0)
 
     tallies = db.relationship("Tally", backref="user", lazy=True)
@@ -155,3 +156,15 @@ class Correction(db.Model):
     amount_cents = db.Column(db.Integer, nullable=False)   # positief = credit, negatief = debet
     description = db.Column(db.String(200), nullable=True)
     date = db.Column(db.Date, default=datetime.utcnow)
+
+
+class PeriodReport(db.Model):
+    """Bevroren rapport van een afgesloten periode (JSON). Wordt nooit opnieuw berekend."""
+    __tablename__ = "period_reports"
+    id = db.Column(db.Integer, primary_key=True)
+    period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False, unique=True)
+    schema_version = db.Column(db.Integer, nullable=False, default=1)
+    data = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    period = db.relationship("Period", backref=db.backref("report", uselist=False))

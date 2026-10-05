@@ -18,6 +18,20 @@ from models import (
 from money import split_even
 
 
+def _user_dict(u):
+    return {"id": u.id, "name": u.name, "is_active": bool(u.is_active)}
+
+
+def _product_dict(p):
+    return {"id": p.id, "name": p.name, "emoji": p.emoji, "price_cents": p.price_cents,
+            "is_active": bool(p.is_active), "image_url": p.image_url}
+
+
+def _period_dict(p):
+    return {"id": p.id, "name": p.name, "start_date": p.start_date, "end_date": p.end_date,
+            "is_active": bool(p.is_active), "closed_at": p.closed_at}
+
+
 def get_active_period():
     return Period.query.filter_by(is_active=True).order_by(Period.id.desc()).first()
 
@@ -110,7 +124,7 @@ def _inventory(period_id):
             gebruikt = verlies_qty = None
             verlies_cents = 0
         rows.append({
-            "product": p,
+            "product": _product_dict(p),
             "counted": counted,
             "stock_begin": stock_begin,
             "bijstock": bijstock,
@@ -208,7 +222,7 @@ def compute_period(period_id):
         ho = ho_turf[u.id] + ho_events_by_user[u.id]
         corr = corr_by_user.get(u.id, 0)
         user_rows.append({
-            "user": u,
+            "user": _user_dict(u),
             "vorige_stand": begin,
             "overgemaakt": paid,
             "geturfd": geturfd,
@@ -226,7 +240,7 @@ def compute_period(period_id):
     ho_uniform = bool(ho_values) and max(ho_values) - min(ho_values) <= 1  # ≤ 1 cent door afronding
 
     if inventory and not inventory_complete:
-        missing = ", ".join(r["product"].name for r in inventory if not r["counted"])
+        missing = ", ".join(r["product"]["name"] for r in inventory if not r["counted"])
         warnings.append({"code": "inventory_incomplete", "message": f"Eindtelling ontbreekt voor: {missing}."})
     if inventory_complete and turfverlies_total < 0:
         warnings.append({"code": "negative_turfverlies", "message": "Negatief turfverlies: er is meer geturfd dan gebruikt."})
@@ -235,19 +249,28 @@ def compute_period(period_id):
 
     # Producten die in het rapport als kolom staan: actief, of met turfjes in deze periode
     tallied_product_ids = {pid for per_user in tally_map.values() for pid in per_user}
-    report_products = [p for p in Product.query.order_by(Product.sort_order, Product.id)
+    report_products = [_product_dict(p) for p in Product.query.order_by(Product.sort_order, Product.id)
                        if p.is_active or p.id in tallied_product_ids]
 
+    beer_names = {p.id: p for p in Product.query.filter(Product.id.in_([e.beer_product_id for e in events if e.beer_product_id]))} if events else {}
+    event_dicts = [{
+        "id": e.id, "name": e.name, "date": e.date, "notes": e.notes,
+        "total_cost_cents": e.total_cost_cents, "distribution_type": e.distribution_type,
+        "beer_quantity": e.beer_quantity,
+        "beer_product_name": beer_names[e.beer_product_id].name if e.beer_product_id in beer_names else None,
+        "beer_cost_cents": (e.beer_quantity or 0) * beer_names[e.beer_product_id].price_cents if e.beer_product_id in beer_names else 0,
+    } for e in events]
+
     return {
-        "period": period,
-        "users": users,
+        "period": _period_dict(period),
+        "users": [_user_dict(u) for u in users],
         "products": report_products,
         "user_rows": user_rows,
         "inventory": inventory,
         "inventory_complete": inventory_complete,
         "turfverlies_total": turfverlies_total,
         "turfverlies_distributed": turfverlies_distributed,
-        "ho_events": events,
+        "ho_events": event_dicts,
         "ho_events_total": ho_events_total,
         "total_ho": turfverlies_distributed + ho_events_total,
         "ho_uniform": ho_uniform,

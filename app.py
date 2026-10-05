@@ -4,7 +4,6 @@ from flask_wtf.csrf import CSRFProtect, CSRFError
 from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from flask_migrate import Migrate
-from sqlalchemy.exc import IntegrityError
 
 load_dotenv()
 from models import (
@@ -15,20 +14,14 @@ from calculations import (
     get_active_period, compute_period, get_period_status, get_tallied_per_user_product,
 )
 
-from models import PeriodStartBalance
 from auth import bp as auth_bp, admin_required
 from filters import euro, euro_cls
-from money import parse_cents, cents_input, to_cents
-from forms import FormError, parse_date, parse_float, parse_int
+from money import parse_cents, cents_input
+from forms import FormError, parse_date, parse_int
+from periods import (PeriodError, check_period_dates, close_blockers, close_period, create_first_period,
+                     default_next_name, get_period_view, has_data)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-def save_period_start_balances(period_id, users):
-    """Sla de huidige previous_balance op als beginstand-snapshot voor deze periode."""
-    PeriodStartBalance.query.filter_by(period_id=period_id).delete()
-    for u in users:
-        db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance_cents=to_cents(f"{u.previous_balance or 0:.2f}")))
 
 
 app = Flask(__name__)
@@ -72,6 +65,12 @@ def _globals():
     except OSError:
         version = 0
     return {"css_version": version}
+
+
+@app.errorhandler(PeriodError)
+def _period_error(err):
+    flash(str(err), "error")
+    return redirect(request.referrer or url_for("admin_periods"))
 
 
 @app.errorhandler(FormError)
@@ -226,10 +225,10 @@ def rapport(period_id=None):
     if period_id is None:
         p = get_active_period()
         period_id = p.id if p else None
-    if period_id is None:
+    if period_id is None or db.session.get(Period, period_id) is None:
         return render_template("rapport.html", overview=None, periods=[])
 
-    overview = compute_period(period_id)
+    overview = get_period_view(period_id)
     periods = Period.query.order_by(Period.start_date.desc()).all()
     return render_template("rapport.html", overview=overview, periods=periods, current_period_id=period_id)
 
@@ -250,95 +249,56 @@ def admin():
                            periods=periods, status=status)
 
 
-# Vorige standen
-@app.route("/admin/vorige-stand", methods=["GET"])
-@admin_required
-def admin_vorige_stand():
-    periods = Period.query.order_by(Period.start_date.desc()).all()
-    active = get_active_period()
-    return render_template("admin/vorige_stand.html", periods=periods, active=active)
-
-
-@app.route("/admin/vorige-stand/<int:period_id>", methods=["GET", "POST"])
-@admin_required
-def admin_vorige_stand_period(period_id):
-    period = db.session.get(Period, period_id)
-    if not period:
-        return redirect(url_for("admin_vorige_stand"))
-
-    users = User.query.order_by(User.sort_order, User.name).all()
-
-    if request.method == "POST":
-        # Sla op als snapshot voor deze periode
-        PeriodStartBalance.query.filter_by(period_id=period_id).delete()
-        for u in users:
-            val = request.form.get(f"balance_{u.id}", "").strip()
-            balance = parse_cents(val, "Beginstand", 0)
-            db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance_cents=balance))
-        # Als het de actieve periode is, ook previous_balance updaten
-        if period.is_active:
-            for u in users:
-                val = request.form.get(f"balance_{u.id}", "").strip()
-                if val:
-                    u.previous_balance = parse_cents(val, "Beginstand") / 100
-        db.session.commit()
-        return redirect(url_for("admin_vorige_stand_period", period_id=period_id))
-
-    # Haal huidige snapshot op voor deze periode
-    snaps = {s.user_id: s.balance_cents for s in PeriodStartBalance.query.filter_by(period_id=period_id).all()}
-    balances = {u.id: snaps.get(u.id, 0) for u in users}  # geen beginstand = 0
-
-    return render_template("admin/vorige_stand.html",
-                           period=period, users=users, balances=balances,
-                           periods=None, active=None)
-
-
-# Gebruikers
+# Bewoners
 @app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
 def admin_users():
+    period = get_active_period()
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
             name = request.form.get("name", "").strip()
-            if name:
-                max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
-                user = User(name=name, previous_balance=parse_float(request.form.get("previous_balance"), "Vorige stand", 0.0), sort_order=max_order + 1)
-                db.session.add(user)
-                db.session.commit()
+            if not name:
+                raise FormError("Naam: vul een naam in.")
+            max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
+            db.session.add(User(name=name, sort_order=max_order + 1))
+            db.session.commit()
+            flash(f"{name} toegevoegd. Start in de lopende periode op €0,00.", "success")
         elif action == "edit":
             user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
             if user:
-                user.name = request.form.get("name", user.name).strip()
-                user.is_active = "is_active" in request.form
+                name = request.form.get("name", "").strip()
+                if name:
+                    user.name = name
                 user.participates_in_ho = "participates_in_ho" in request.form
-                user.previous_balance = parse_float(request.form.get("previous_balance"), "Vorige stand", user.previous_balance)
                 db.session.commit()
-        elif action == "delete":
+        elif action == "leave":
             user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
-            if user:
-                try:
-                    # Verwijder eerst alle gekoppelde financiële data — anders
-                    # blokkeert de database het verwijderen van de gebruiker zelf.
-                    # LET OP: dit wist definitief eventuele openstaande schuld/tegoed.
-                    Tally.query.filter_by(user_id=user.id).delete()
-                    Payment.query.filter_by(user_id=user.id).delete()
-                    Correction.query.filter_by(user_id=user.id).delete()
-                    HOEventShare.query.filter_by(user_id=user.id).delete()
-                    PeriodStartBalance.query.filter_by(user_id=user.id).delete()
-                    db.session.delete(user)
-                    db.session.commit()
-                    flash(f"{user.name} en alle bijbehorende data zijn verwijderd.", "success")
-                except IntegrityError:
-                    db.session.rollback()
-                    flash(f"{user.name} kon niet verwijderd worden door een databasefout.", "error")
+            if user and user.is_active:
+                user.is_active = False
+                user.left_at = date.today()
+                db.session.commit()
+                stand = 0
+                if period:
+                    stand = next((r["stand"] for r in compute_period(period.id)["user_rows"]
+                                  if r["user"]["id"] == user.id), 0)
+                if stand:
+                    flash(f"{user.name} is vertrokken en staat nog op {euro(stand, sign=True)}. "
+                          "Die stand blijft in de volgende periodes staan tot hij is vereffend.", "error")
+                else:
+                    flash(f"{user.name} is op vertrokken gezet.", "success")
+        elif action == "return":
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
+            if user and not user.is_active:
+                user.is_active = True
+                user.left_at = None
+                db.session.commit()
         return redirect(url_for("admin_users"))
 
     users = User.query.order_by(User.sort_order, User.name).all()
-    period = get_active_period()
     user_stands = {}
     if period:
-        user_stands = {r["user"].id: r["stand"] for r in compute_period(period.id)["user_rows"]}
+        user_stands = {r["user"]["id"]: r["stand"] for r in compute_period(period.id)["user_rows"]}
     return render_template("admin/users.html", users=users, user_stands=user_stands, period=period)
 
 
@@ -401,70 +361,72 @@ def admin_products():
 def admin_periods():
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "add":
-            name = request.form.get("name", "").strip()
-            start_date = parse_date(request.form.get("start_date"), "Startdatum")
-            source_period_id = request.form.get("source_period_id") or None
-            bron = db.session.get(Period, parse_int(source_period_id, "Bronperiode")) if source_period_id else get_active_period()
-            if bron:
-                users = User.query.all()
-                stands = {r["user"].id: r["stand"] for r in compute_period(bron.id)["user_rows"]}
-                for u in users:
-                    u.previous_balance = stands.get(u.id, 0) / 100
-            Period.query.update({"is_active": False})
-            new_period = Period(name=name, start_date=start_date, is_active=True)
-            db.session.add(new_period)
-            db.session.flush()  # get new_period.id
-            users = User.query.all()
-            save_period_start_balances(new_period.id, users)
-            db.session.commit()
-        elif action == "copy_balances":
-            source_period_id = parse_int(request.form.get("source_period_id"), "Bronperiode")
-            bron = db.session.get(Period, source_period_id)
-            active = get_active_period()
-            if bron and active:
-                users = User.query.all()
-                stands = {r["user"].id: r["stand"] for r in compute_period(bron.id)["user_rows"]}
-                for u in users:
-                    u.previous_balance = stands.get(u.id, 0) / 100
-                save_period_start_balances(active.id, users)
-                db.session.commit()
-        elif action == "delete":
-            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
-            if period and not period.is_active:
-                db.session.delete(period)
-                db.session.commit()
-        elif action == "activate":
-            Period.query.update({"is_active": False})
-            db.session.flush()
-            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
-            if period:
-                period.is_active = True
-                db.session.commit()
-        elif action == "close":
-            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
-            if period:
-                end_date_str = request.form.get("end_date", "").strip()
-                if end_date_str:
-                    period.end_date = parse_date(end_date_str, "Einddatum")
-                period.is_active = False
-                db.session.commit()
+        if action == "first":
+            start = parse_date(request.form.get("start_date"), "Startdatum")
+            warnings = check_period_dates(start, None)
+            create_first_period(request.form.get("name", ""), start)
+            for w in warnings:
+                flash(w, "error")
+            flash("Periode aangemaakt.", "success")
         elif action == "edit":
             period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
-            if period:
+            if period and period.is_active and not period.closed_at:
                 name = request.form.get("name", "").strip()
-                start_date_str = request.form.get("start_date", "")
-                end_date_str = request.form.get("end_date", "")
+                start = parse_date(request.form.get("start_date"), "Startdatum")
+                for w in check_period_dates(start, None, exclude_id=period.id):
+                    flash(w, "error")
                 if name:
                     period.name = name
-                if start_date_str:
-                    period.start_date = parse_date(start_date_str, "Startdatum")
-                period.end_date = parse_date(end_date_str, "Einddatum") if end_date_str else None
+                period.start_date = start
                 db.session.commit()
+                flash("Periode bijgewerkt.", "success")
+            else:
+                flash("Een afgesloten periode kan niet meer worden gewijzigd.", "error")
+        elif action == "delete":
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
+            if period and not period.is_active and not period.closed_at and not has_data(period):
+                db.session.delete(period)
+                db.session.commit()
+            else:
+                flash("Alleen een lege periode kan worden verwijderd.", "error")
         return redirect(url_for("admin_periods"))
 
     periods = Period.query.order_by(Period.start_date.desc()).all()
-    return render_template("admin/periods.html", periods=periods)
+    active = get_active_period()
+    start_balances = []
+    if active:
+        start_balances = [r for r in compute_period(active.id)["user_rows"]]
+    return render_template("admin/periods.html", periods=periods, active=active, start_balances=start_balances,
+                           today=date.today().isoformat())
+
+
+@app.route("/admin/periods/close", methods=["GET", "POST"])
+@admin_required
+def admin_close_period():
+    period = get_active_period()
+    if not period or period.closed_at:
+        flash("Er is geen lopende periode om af te sluiten.", "error")
+        return redirect(url_for("admin_periods"))
+
+    if request.method == "POST":
+        end_date = parse_date(request.form.get("end_date"), "Einddatum")
+        next_start = parse_date(request.form.get("next_start"), "Startdatum nieuwe periode")
+        if "confirm" not in request.form:
+            raise FormError("Vink aan dat het rapport klopt voordat je afsluit.")
+        new_period, warnings = close_period(period, end_date, request.form.get("next_name", ""), next_start)
+        for w in warnings:
+            flash(w, "error")
+        flash(f"'{period.name}' is afgesloten en bevroren. '{new_period.name}' is gestart.", "success")
+        return redirect(url_for("rapport", period_id=period.id))
+
+    end_default = date.today()
+    ov = compute_period(period.id)
+    return render_template(
+        "admin/close_period.html", period=period, overview=ov,
+        blockers=close_blockers(ov), end_default=end_default.isoformat(),
+        next_name=default_next_name(end_default), today=date.today().isoformat(),
+        date_warnings=check_period_dates(period.start_date, end_default, exclude_id=period.id),
+    )
 
 
 # Voorraad
@@ -521,7 +483,7 @@ def admin_inventory():
 
         elif action == "delete_purchase":
             purchase = db.session.get(InventoryPurchase, parse_int(request.form.get("purchase_id"), "Id"))
-            if purchase:
+            if purchase and purchase.period_id == period.id:
                 db.session.delete(purchase)
                 db.session.commit()
 
@@ -529,7 +491,7 @@ def admin_inventory():
 
     ov = compute_period(period.id)
     inventory = ov["inventory"]
-    used_ids = {r["product"].id for r in inventory}
+    used_ids = {r["product"]["id"] for r in inventory}
     products = [p for p in Product.query.filter_by(parent_product_id=None).order_by(Product.sort_order, Product.id)
                 if p.is_active or p.id in used_ids]
     purchases = InventoryPurchase.query.filter_by(period_id=period.id).order_by(InventoryPurchase.date.desc()).all()
@@ -698,7 +660,7 @@ def ho():
 
         elif action == "delete_event":
             event = db.session.get(HOEvent, parse_int(request.form.get("event_id"), "Id"))
-            if event:
+            if event and event.period_id == period.id:
                 db.session.delete(event)
                 db.session.commit()
 
