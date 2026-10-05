@@ -5,7 +5,7 @@ from models import db, Period, Tally
 
 def _tally(basis, **kw):
     t = Tally(period_id=kw.pop("period_id", basis["period"].id), user_id=basis["users"][0].id,
-              product_id=basis["pils"].id, quantity=1, **kw)
+              product_id=basis["pils"].id, quantity=1, unit_price_cents=100, **kw)
     db.session.add(t)
     db.session.commit()
     return t

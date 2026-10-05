@@ -1,34 +1,27 @@
-"""Jinja-filters."""
-from decimal import Decimal, ROUND_HALF_UP
-
+"""Jinja-filters. Bedragen komen binnen als hele centen (int)."""
 from markupsafe import Markup
 
 MINUS = "−"
+_DASH = Markup('<span class="zero">—</span>')
 
 
-def _fmt(abs_value):
-    q = Decimal(str(abs_value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    whole, frac = f"{q:.2f}".split(".")
-    whole = f"{int(whole):,}".replace(",", ".")
-    return f"€{whole},{frac}"
+def _fmt(abs_cents):
+    whole, frac = divmod(int(abs_cents), 100)
+    return f"€{whole:,}".replace(",", ".") + f",{frac:02d}"
 
 
-def euro(value, sign=False):
+def euro(cents, sign=False):
     """−€1,01 · +€1,01 (sign=True) · — voor nul of leeg. Nederlandse notatie."""
-    if value is None:
-        return Markup('<span class="zero">—</span>')
-    dec = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    if dec == 0:
-        return Markup('<span class="zero">—</span>')
-    text = _fmt(abs(dec))
-    if dec < 0:
-        return MINUS + text
-    return ("+" if sign else "") + text
+    if cents is None or int(cents) == 0:
+        return _DASH
+    cents = int(cents)
+    if cents < 0:
+        return MINUS + _fmt(-cents)
+    return ("+" if sign else "") + _fmt(cents)
 
 
-def euro_cls(value):
+def euro_cls(cents):
     """CSS-klasse voor een stand: pos / neg / zero."""
-    if value is None:
+    if not cents:
         return "zero"
-    dec = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return "zero" if dec == 0 else ("pos" if dec > 0 else "neg")
+    return "pos" if cents > 0 else "neg"

@@ -36,8 +36,8 @@ def basis(app):
     """Eén actieve periode, vier gebruikers, drie producten."""
     period = Period(name="Test", start_date=date(2026, 10, 1), is_active=True)
     users = [User(name=n, sort_order=i) for i, n in enumerate(["A", "B", "C", "D"])]
-    pils = Product(name="Pils", price=1.0, sort_order=1)
-    fris = Product(name="Fris", price=0.5, sort_order=2)
+    pils = Product(name="Pils", price_cents=100, sort_order=1)
+    fris = Product(name="Fris", price_cents=50, sort_order=2)
     db.session.add_all([period, pils, fris, *users])
     db.session.commit()
     return {"period": period, "users": users, "pils": pils, "fris": fris}

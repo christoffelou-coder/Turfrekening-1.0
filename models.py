@@ -42,7 +42,7 @@ class Product(db.Model):
     __tablename__ = "products"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    price = db.Column(db.Float, nullable=False)
+    price_cents = db.Column(db.Integer, nullable=False)
     emoji = db.Column(db.String(10), default="🍺")
     is_active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
@@ -64,6 +64,8 @@ class Tally(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False)
     quantity = db.Column(db.Integer, default=1, nullable=False)
+    # Prijs per stuk op het moment van turven: latere prijswijzigingen raken oude turfjes niet
+    unit_price_cents = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -74,7 +76,7 @@ class InventoryPurchase(db.Model):
     period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    total_cost = db.Column(db.Float, nullable=True)   # werkelijke aankoopprijs (optioneel)
+    total_cost_cents = db.Column(db.Integer, nullable=True)   # werkelijke aankoopprijs (optioneel)
     date = db.Column(db.Date, default=datetime.utcnow)
     notes = db.Column(db.String(200), nullable=True)
 
@@ -100,7 +102,7 @@ class HOEvent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    total_cost = db.Column(db.Float, nullable=False)
+    total_cost_cents = db.Column(db.Integer, nullable=False)
     date = db.Column(db.Date, default=datetime.utcnow)
     # 'equal_all'  = gelijk verdeeld over alle actieve leden
     # 'equal_selected' = gelijk verdeeld over geselecteerde leden
@@ -120,7 +122,7 @@ class HOEventShare(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ho_event_id = db.Column(db.Integer, db.ForeignKey("ho_events.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount_cents = db.Column(db.Integer, nullable=False)
 
 
 class PeriodStartBalance(db.Model):
@@ -129,7 +131,7 @@ class PeriodStartBalance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    balance = db.Column(db.Float, nullable=False)
+    balance_cents = db.Column(db.Integer, nullable=False)
 
 
 class Payment(db.Model):
@@ -138,7 +140,7 @@ class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount_cents = db.Column(db.Integer, nullable=False)
     date = db.Column(db.Date, default=datetime.utcnow)
     notes = db.Column(db.String(200), nullable=True)
 
@@ -149,6 +151,6 @@ class Correction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     period_id = db.Column(db.Integer, db.ForeignKey("periods.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)   # positief = credit, negatief = debet
+    amount_cents = db.Column(db.Integer, nullable=False)   # positief = credit, negatief = debet
     description = db.Column(db.String(200), nullable=True)
     date = db.Column(db.Date, default=datetime.utcnow)
