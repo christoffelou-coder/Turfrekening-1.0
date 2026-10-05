@@ -218,7 +218,9 @@ textarea.input { padding: var(--space-2) var(--space-3); min-height: 80px; }
 }
 .user-btn:active { transform: scale(.95); }
 .user-btn .uname { font-size: 18px; font-weight: 500; }
-.user-btn .ucount { font-size: 13px; color: var(--text-muted); min-height: 18px; font-variant-numeric: tabular-nums; }
+.user-btn .ucount { display: flex; align-items: baseline; gap: 6px; min-height: 38px; font-variant-numeric: tabular-nums; }
+.user-btn .ucount .n { font-size: 32px; font-weight: 600; line-height: 1; color: var(--accent); }
+.user-btn .ucount .p { font-size: 15px; color: var(--text-2); }
 .user-btn.hit { background: var(--accent-bg); border-color: var(--accent); }
 .user-grid.locked .user-btn { opacity: .35; pointer-events: none; }
 .user-grid.correcting .user-btn { border-color: var(--negative); }

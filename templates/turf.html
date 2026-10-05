@@ -81,7 +81,12 @@
 
   function setCount(btn, n) {
     const el = btn.querySelector('.ucount');
-    el.textContent = n > 0 && product ? n + '× ' + product.name.toLowerCase() : '';
+    el.textContent = '';
+    if (n > 0 && product) {
+      const num = document.createElement('span'); num.className = 'n'; num.textContent = n;
+      const lbl = document.createElement('span'); lbl.className = 'p'; lbl.textContent = '× ' + product.name.toLowerCase();
+      el.append(num, lbl);
+    }
     btn.dataset.count = n;
   }
 
