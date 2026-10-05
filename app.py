@@ -204,6 +204,32 @@ def last_tally():
     })
 
 
+# ─── Activiteit (anoniem: wanneer is er geturfd, nooit door wie) ─────────────
+
+@app.route("/activiteit")
+def activiteit():
+    return render_template("activiteit.html", period=get_active_period())
+
+
+@app.route("/api/activity")
+def api_activity():
+    """Tijdstippen van turfjes. Bevat bewust GEEN persoon, alleen tijd, product en aantal."""
+    days = max(1, min(request.args.get("days", 7, type=int), 31))
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.session.query(Tally.created_at, Tally.quantity, Product.name)
+        .join(Product, Product.id == Tally.product_id)
+        .filter(Tally.created_at >= since, Tally.quantity > 0)
+        .order_by(Tally.created_at.desc())
+        .limit(5000)
+        .all()
+    )
+    return jsonify({
+        "now": datetime.utcnow().isoformat() + "Z",
+        "events": [{"t": t.isoformat() + "Z", "q": q, "product": name} for t, q, name in rows],
+    })
+
+
 @app.route("/api/product-counts/<int:product_id>")
 def product_counts(product_id):
     """Geeft het aantal turfjes per persoon voor een product in de actieve periode."""

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Activiteit · Turfrekening{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Activiteit</h1>
+      <div class="text-muted text-small">Wanneer er geturfd is. Zonder namen: het gaat erom dát er geturfd is.</div>
+    </div>
+    <div class="seg" role="group" aria-label="Periode">
+      <button type="button" data-range="24h" aria-pressed="true">24 uur</button>
+      <button type="button" data-range="7d" aria-pressed="false">7 dagen</button>
+      <button type="button" data-range="30d" aria-pressed="false">30 dagen</button>
+    </div>
+  </div>
+
+  <div class="stack">
+    <section class="grid grid-3">
+      <div class="stat"><div class="label">Laatste turfje</div><div class="value" id="statLast">—</div><div class="text-faint text-tiny" id="statAgo"></div></div>
+      <div class="stat"><div class="label">Turfjes in dit overzicht</div><div class="value" id="statTotal">—</div></div>
+      <div class="stat"><div class="label">Drukste moment</div><div class="value" id="statPeak">—</div><div class="text-faint text-tiny" id="statPeakN"></div></div>
+    </section>
+
+    <section class="card">
+      <h2 id="chartTitle">Turfjes per uur</h2>
+      <svg id="chart" class="chart" viewBox="0 0 800 300" role="img" aria-label="Staafgrafiek van het aantal turfjes"></svg>
+      <div class="readout" id="readout">Tik op een staaf voor details.</div>
+    </section>
+
+    <section class="card">
+      <h2>Laatste turfjes</h2>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Tijdstip</th><th>Product</th><th class="num">Aantal</th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table></div>
+      <div class="empty hidden" id="empty"><p>Nog niets geturfd in deze periode.</p></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const DAYS = { '24h': 2, '7d': 8, '30d': 31 };   // iets extra ophalen voor de randen
+  const dagNamen = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
+  let events = [], range = '24h', now = new Date();
+
+  const pad = n => String(n).padStart(2, '0');
+  const hhmm = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const dagLabel = d => dagNamen[d.getDay()] + ' ' + d.getDate() + '-' + (d.getMonth() + 1);
+
+  function buckets() {
+    const out = [];
+    if (range === '24h') {
+      const start = new Date(now); start.setMinutes(0, 0, 0); start.setHours(start.getHours() - 23);
+      for (let i = 0; i < 24; i++) {
+        const a = new Date(start); a.setHours(start.getHours() + i);
+        const b = new Date(a); b.setHours(a.getHours() + 1);
+        out.push({ a, b, n: 0, label: pad(a.getHours()), title: dagLabel(a) + ' ' + pad(a.getHours()) + ':00–' + pad(b.getHours()) + ':00' });
+      }
+    } else {
+      const n = range === '7d' ? 7 : 30;
+      const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (n - 1));
+      for (let i = 0; i < n; i++) {
+        const a = new Date(start); a.setDate(start.getDate() + i);
+        const b = new Date(a); b.setDate(a.getDate() + 1);
+        out.push({ a, b, n: 0, label: range === '7d' ? dagNamen[a.getDay()] + ' ' + a.getDate() : String(a.getDate()), title: dagLabel(a) });
+      }
+    }
+    events.forEach(e => {
+      const t = new Date(e.t);
+      const bk = out.find(x => t >= x.a && t < x.b);
+      if (bk) bk.n += e.q;
+    });
+    return out;
+  }
+
+  function niceMax(m) {
+    if (m <= 4) return 4;
+    const p = Math.pow(10, Math.floor(Math.log10(m)));
+    return Math.ceil(m / p) * p >= m * 1.0 ? Math.ceil(m / (p / 2)) * (p / 2) : m;
+  }
+
+  function draw() {
+    const bs = buckets();
+    const svg = $('chart');
+    const W = 800, H = 300, L = 40, R = 8, T = 10, B = 28;
+    const max = niceMax(Math.max(1, ...bs.map(b => b.n)));
+    const bw = (W - L - R) / bs.length;
+    let h = '';
+    for (let i = 0; i <= 4; i++) {
+      const y = T + (H - T - B) * (1 - i / 4);
+      h += '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/>';
+      h += '<text class="axis" x="' + (L - 6) + '" y="' + (y + 4) + '" text-anchor="end">' + Math.round(max * i / 4) + '</text>';
+    }
+    const every = bs.length > 14 ? (bs.length > 24 ? 3 : 2) : 1;
+    bs.forEach((b, i) => {
+      const bh = (H - T - B) * (b.n / max);
+      const x = L + i * bw + bw * 0.12, w = bw * 0.76, y = H - B - bh;
+      h += '<rect class="bar' + (b.n ? '' : ' empty') + '" data-i="' + i + '" x="' + x + '" y="' + (b.n ? y : H - B - 2) + '" width="' + w + '" height="' + (b.n ? bh : 2) + '" rx="3"><title>' + b.title + ': ' + b.n + '</title></rect>';
+      if (i % every === 0) h += '<text class="axis" x="' + (x + w / 2) + '" y="' + (H - 8) + '" text-anchor="middle">' + b.label + '</text>';
+    });
+    svg.innerHTML = h;
+    $('chartTitle').textContent = range === '24h' ? 'Turfjes per uur, laatste 24 uur' : 'Turfjes per dag, laatste ' + (range === '7d' ? '7' : '30') + ' dagen';
+    svg.querySelectorAll('.bar').forEach(r => r.addEventListener('click', () => {
+      svg.querySelectorAll('.bar').forEach(x => x.classList.remove('sel')); r.classList.add('sel');
+      const b = bs[+r.dataset.i];
+      $('readout').textContent = b.title + ': ' + b.n + (b.n === 1 ? ' turfje' : ' turfjes');
+    }));
+    $('readout').textContent = 'Tik op een staaf voor details.';
+
+    const total = bs.reduce((s, b) => s + b.n, 0);
+    $('statTotal').textContent = total;
+    const peak = bs.reduce((m, b) => b.n > m.n ? b : m, bs[0]);
+    $('statPeak').textContent = peak.n ? peak.title.replace(/–.*/, '') : '—';
+    $('statPeakN').textContent = peak.n ? peak.n + ' turfjes' : '';
+  }
+
+  function recent() {
+    const body = $('recent'); body.innerHTML = '';
+    const list = events.slice(0, 15);
+    $('empty').classList.toggle('hidden', list.length > 0);
+    list.forEach(e => {
+      const d = new Date(e.t), tr = document.createElement('tr');
+      const sameDay = d.toDateString() === now.toDateString();
+      [(sameDay ? 'Vandaag ' : dagLabel(d) + ' ') + hhmm(d), e.product, e.q].forEach((v, i) => {
+        const td = document.createElement('td'); td.textContent = v; if (i === 2) td.className = 'num'; tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    if (events.length) {
+      const d = new Date(events[0].t), mins = Math.round((now - d) / 60000);
+      $('statLast').textContent = hhmm(d);
+      $('statAgo').textContent = mins < 1 ? 'zojuist' : mins < 60 ? mins + ' min geleden' : mins < 1440 ? Math.floor(mins / 60) + ' uur geleden' : Math.floor(mins / 1440) + ' dagen geleden';
+    } else { $('statLast').textContent = '—'; $('statAgo').textContent = ''; }
+  }
+
+  function load() {
+    fetch('/api/activity?days=' + DAYS[range]).then(r => r.json()).then(d => {
+      events = d.events; now = new Date(); draw(); recent();
+    });
+  }
+
+  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    range = b.dataset.range; load();
+  }));
+  load();
+  setInterval(load, 60000);
+})();
+</script>
+{% endblock %}

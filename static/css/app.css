@@ -258,3 +258,16 @@ details.edit > summary { list-style: none; cursor: pointer; }
 details.edit > summary::-webkit-details-marker { display: none; }
 details.edit[open] > summary { margin-bottom: var(--space-3); }
 .warn-list { margin: 0; padding-left: var(--space-5); color: var(--accent); font-size: 14px; }
+
+/* ══ Activiteit ══ */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+.seg button { min-height: var(--control-h); padding: 0 var(--space-4); background: transparent; color: var(--text-2); border: 0; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--border); stroke-width: 1; }
+.chart .axis { fill: var(--text-muted); font-size: 12px; font-family: var(--font); }
+.chart .bar { fill: var(--accent); cursor: pointer; }
+.chart .bar.empty { fill: var(--border); }
+.chart .bar.sel { fill: var(--text); }
+.readout { min-height: 24px; color: var(--text-2); font-variant-numeric: tabular-nums; }

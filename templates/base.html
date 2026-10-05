@@ -19,6 +19,7 @@
     <a href="/" class="brand">Turfrekening</a>
     <div class="links">
       <a href="/" {% if request.path == '/' %}aria-current="page"{% endif %}>Turfen</a>
+      <a href="/activiteit" {% if request.path == '/activiteit' %}aria-current="page"{% endif %}>Activiteit</a>
       <a href="/rapport" {% if request.path.startswith('/rapport') %}aria-current="page"{% endif %}>Rapport</a>
       <a href="/admin" {% if request.path.startswith('/admin') or request.path == '/ho' %}aria-current="page"{% endif %}>Admin</a>
     </div>
