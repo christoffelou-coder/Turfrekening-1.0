@@ -53,6 +53,16 @@
 </div>
 
 <script>
+// Zoomen uitzetten (iPad/Safari negeert user-scalable=no): pinch-gebaren blokkeren
+(function () {
+  document.documentElement.classList.add('no-zoom');
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+    document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+})();
+</script>
+<script>
 (function () {
   // iPad/Safari: 100vh telt de browserbalken mee; visualViewport is wat je echt ziet
   const root = document.querySelector('.turf');

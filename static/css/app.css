@@ -191,6 +191,8 @@ textarea.input { padding: var(--space-2) var(--space-3); min-height: 80px; }
 }
 
 /* ══ Turfscherm (iPad, liggend) ══ */
+/* Geen zoomen: pinch en dubbeltik uit; alleen schuiven (swipen) blijft werken */
+html.no-zoom, html.no-zoom body, html.no-zoom body * { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; }
 .turf { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding: var(--space-4) var(--space-5); gap: var(--space-4); }
 .turf-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-shrink: 0; }
 .turf-head .brand { font-size: 17px; font-weight: 600; }

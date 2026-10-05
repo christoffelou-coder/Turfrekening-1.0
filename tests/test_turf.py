@@ -71,3 +71,11 @@ def test_turfscherm_geeft_geluid_door(client, basis):
     db.session.commit()
     html = client.get("/").get_data(as_text=True)
     assert 'data-sound="piep"' in html and 'data-every="3"' in html and 'id="soundBtn"' in html
+
+
+def test_turfscherm_blokkeert_zoomen(client, basis):
+    html = client.get("/").get_data(as_text=True)
+    assert "gesturestart" in html and "no-zoom" in html
+    assert "user-scalable=no" in html and "maximum-scale=1.0" in html
+    css = client.get("/static/css/app.css").get_data(as_text=True)
+    assert "touch-action: pan-x pan-y" in css
