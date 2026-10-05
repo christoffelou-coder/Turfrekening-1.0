@@ -45,10 +45,6 @@
     </div>
   </section>
 
-  <footer class="turf-bar" aria-live="polite">
-    <div class="last" id="last">Nog niets geturfd</div>
-    <button type="button" class="btn" id="undoBtn" disabled>Ongedaan maken</button>
-  </footer>
   {% endif %}
 </div>
 
@@ -70,12 +66,9 @@
   const usersEl = document.getElementById('users');
   if (!usersEl) return;
   const hint = document.getElementById('hint');
-  const lastEl = document.getElementById('last');
-  const undoBtn = document.getElementById('undoBtn');
   const correctBtn = document.getElementById('correctBtn');
   let product = null;       // {id, name}
   let correcting = false;
-  let lastTally = null;
 
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -97,26 +90,9 @@
   }
 
   function showError(msg) {
-    lastEl.innerHTML = '';
-    const s = document.createElement('span'); s.className = 'err'; s.textContent = msg;
-    lastEl.appendChild(s);
-    setTimeout(renderLast, 3000);
-  }
-
-  function renderLast() {
-    undoBtn.disabled = !(lastTally && lastTally.undoable);
-    if (!lastTally) { lastEl.textContent = 'Nog niets geturfd'; return; }
-    const t = new Date(lastTally.created_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
-    const q = lastTally.quantity;
-    const what = q < 0 ? 'Correctie ' + q : q + ' ' + lastTally.product.toLowerCase();
-    lastEl.textContent = '';
-    const strong = document.createElement('strong'); strong.textContent = lastTally.user;
-    const when = document.createElement('span'); when.className = 'when'; when.textContent = ' · ' + t;
-    lastEl.append(strong, ' · ' + what, when);
-  }
-
-  function loadLast() {
-    return fetch('/api/last-tally').then(r => r.json()).then(d => { lastTally = d.tally; renderLast(); });
+    hint.textContent = msg;
+    hint.style.color = 'var(--negative)';
+    setTimeout(() => { hint.textContent = 'Wat pak je?'; hint.style.color = ''; }, 3000);
   }
 
   $$('.product-btn').forEach(btn => btn.addEventListener('click', () => {
@@ -148,21 +124,10 @@
     .then(d => {
       if (d.error) { showError(d.error); return; }
       setCount(btn, Math.max(0, parseInt(btn.dataset.count || '0', 10) + qty));
-      loadLast();
     })
     .catch(() => showError('Geen verbinding'));
   }));
 
-  undoBtn.addEventListener('click', () => {
-    if (!lastTally) return;
-    undoBtn.disabled = true;
-    fetch('/api/tally/' + lastTally.id, { method: 'DELETE', headers: { 'X-CSRFToken': csrf } })
-      .then(r => r.json())
-      .then(d => { if (d.error) showError(d.error); if (product) loadCounts(); loadLast(); })
-      .catch(() => showError('Geen verbinding'));
-  });
-
-  loadLast();
 })();
 </script>
 {% endblock %}
