@@ -50,3 +50,24 @@ def test_turfscherm_toont_productafbeelding(client, basis):
     db.session.commit()
     html = client.get("/").get_data(as_text=True)
     assert 'src="https://example.com/pils.png"' in html
+
+
+def test_tally_antwoord_bevat_totaal(client, basis):
+    u, p = basis["users"][0], basis["pils"]
+    for expected in (1, 2, 3):
+        d = client.post("/api/tally", json={"user_id": u.id, "product_id": p.id}).get_json()
+        assert d["total"] == expected
+    # correctie verlaagt het totaal
+    d = client.post("/api/tally", json={"user_id": u.id, "product_id": p.id, "quantity": -1}).get_json()
+    assert d["total"] == 2
+    # ander persoon telt apart
+    d = client.post("/api/tally", json={"user_id": basis["users"][1].id, "product_id": p.id}).get_json()
+    assert d["total"] == 1
+
+
+def test_turfscherm_geeft_geluid_door(client, basis):
+    basis["pils"].sound_url = "piep"
+    basis["pils"].sound_every = 3
+    db.session.commit()
+    html = client.get("/").get_data(as_text=True)
+    assert 'data-sound="piep"' in html and 'data-every="3"' in html and 'id="soundBtn"' in html

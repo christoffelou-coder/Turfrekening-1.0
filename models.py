@@ -48,6 +48,9 @@ class Product(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
     image_url = db.Column(db.Text, nullable=True)
+    # Geluidje op het turfscherm: link naar een audiobestand, of "piep" voor het ingebouwde geluid
+    sound_url = db.Column(db.Text, nullable=True)
+    sound_every = db.Column(db.Integer, nullable=True, default=3)  # elke N-de stuk van dit product per persoon
     # Als dit product meerdere eenheden van een ander product telt (bijv. halve krat = 12 pils)
     parent_product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True)
     parent_units = db.Column(db.Integer, default=1)

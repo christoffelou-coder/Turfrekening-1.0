@@ -87,3 +87,22 @@ def test_negatieve_overboeking_mag_wel(admin, basis):
     admin.post("/admin/payments", data={"action": "add", "user_id": basis["users"][0].id,
                                         "amount": "-15", "date": "2026-10-02"})
     assert Payment.query.one().amount_cents == -1500
+
+
+def test_product_geluid_opslaan_en_valideren(admin, basis):
+    base = {"action": "add", "name": "Ei", "price": "0,30", "emoji": "🥚", "sort_order": "5"}
+    admin.post("/admin/products", data={**base, "sound_url": "piep", "sound_every": "3"})
+    ei = Product.query.filter_by(name="Ei").one()
+    assert (ei.sound_url, ei.sound_every) == ("piep", 3)
+    admin.post("/admin/products", data={"action": "edit", "product_id": ei.id, "name": "Ei", "price": "0,30",
+                                        "emoji": "🥚", "sort_order": "5", "is_active": "on",
+                                        "sound_url": "/static/sounds/ei.mp3", "sound_every": "6"})
+    db.session.refresh(ei)
+    assert (ei.sound_url, ei.sound_every) == ("/static/sounds/ei.mp3", 6)
+    # ongeldig: geen javascript:-links, interval buiten bereik
+    for bad in ({"sound_url": "javascript:alert(1)", "sound_every": "3"}, {"sound_url": "piep", "sound_every": "0"}):
+        admin.post("/admin/products", data={**base, "name": "Slecht", **bad})
+    assert Product.query.filter_by(name="Slecht").count() == 0
+    # leeg = geen geluid
+    admin.post("/admin/products", data={**base, "name": "Stil", "sound_url": "", "sound_every": "3"})
+    assert Product.query.filter_by(name="Stil").one().sound_url is None

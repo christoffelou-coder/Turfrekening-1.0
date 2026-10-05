@@ -11,6 +11,7 @@
     </div>
     <div class="row">
       <a href="/activiteit" class="btn">Activiteit</a>
+      <button type="button" id="soundBtn" class="btn" aria-pressed="true">Geluid aan</button>
       <button type="button" id="correctBtn" class="btn">Correctie</button>
     </div>
   </header>
@@ -26,7 +27,7 @@
     <p class="turf-label" id="hint">Wat pak je?</p>
     <div class="product-row scroller" id="products">
       {% for product in products %}
-      <button type="button" class="product-btn" data-id="{{ product.id }}" data-name="{{ product.name }}">
+      <button type="button" class="product-btn" data-id="{{ product.id }}" data-name="{{ product.name }}"{% if product.sound_url %} data-sound="{{ product.sound_url }}" data-every="{{ product.sound_every or 3 }}"{% endif %}>
         {% if product.image_url %}<img class="pimg" src="{{ product.image_url }}" alt="">{% else %}<span class="emoji">{{ product.emoji }}</span>{% endif %}
         <span class="name">{{ product.name }}</span>
       </button>
@@ -115,10 +116,43 @@
     setTimeout(() => { hint.textContent = 'Wat pak je?'; hint.style.color = ''; }, 3000);
   }
 
+  // ── Geluid: speelt direct bij de tik (iPad staat audio alleen toe binnen een tik) ──
+  let soundOn = true;
+  try { soundOn = localStorage.getItem('turfSound') !== 'off'; } catch (e) {}
+  const soundBtn = document.getElementById('soundBtn');
+  function renderSoundBtn() { soundBtn.textContent = soundOn ? 'Geluid aan' : 'Geluid uit'; soundBtn.setAttribute('aria-pressed', soundOn); }
+  renderSoundBtn();
+  let audioCtx = null;
+  function piep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.11;
+        o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        o.start(t); o.stop(t + 0.25);
+      });
+    } catch (e) {}
+  }
+  const audioCache = {};
+  function playSound(url) {
+    if (!soundOn || !url) return;
+    if (url === 'piep') { piep(); return; }
+    const a = audioCache[url] || (audioCache[url] = new Audio(url));
+    try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) {}
+  }
+  soundBtn.addEventListener('click', () => {
+    soundOn = !soundOn; renderSoundBtn();
+    try { localStorage.setItem('turfSound', soundOn ? 'on' : 'off'); } catch (e) {}
+    if (soundOn) { const u = product && product.sound; playSound(u || 'piep'); }
+  });
+
   $$('.product-btn').forEach(btn => btn.addEventListener('click', () => {
     $$('.product-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
-    product = { id: btn.dataset.id, name: btn.dataset.name };
+    product = { id: btn.dataset.id, name: btn.dataset.name, sound: btn.dataset.sound || '', every: parseInt(btn.dataset.every || '3', 10) };
+    if (product.sound && product.sound !== 'piep' && !audioCache[product.sound]) { audioCache[product.sound] = new Audio(product.sound); audioCache[product.sound].preload = 'auto'; }
     usersEl.classList.remove('locked');
     hint.textContent = 'Wat pak je?';
     loadCounts();
@@ -135,6 +169,12 @@
     if (!product) return;
     const qty = correcting ? -1 : 1;
     btn.classList.add('hit'); setTimeout(() => btn.classList.remove('hit'), 180);
+    // verwacht totaal na deze tik: bij elke N-de stuk meteen het geluid (binnen de tik)
+    const expected = Math.max(0, parseInt(btn.dataset.count || '0', 10) + qty);
+    if (qty > 0 && product.sound && product.every > 0 && expected % product.every === 0) {
+      playSound(product.sound);
+      btn.classList.add('hit'); setTimeout(() => btn.classList.remove('hit'), 700);
+    }
     fetch('/api/tally', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
@@ -143,7 +183,7 @@
     .then(r => r.json())
     .then(d => {
       if (d.error) { showError(d.error); return; }
-      setCount(btn, Math.max(0, parseInt(btn.dataset.count || '0', 10) + qty));
+      setCount(btn, typeof d.total === 'number' ? d.total : expected);
     })
     .catch(() => showError('Geen verbinding'));
   }));

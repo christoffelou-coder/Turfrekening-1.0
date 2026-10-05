@@ -23,6 +23,17 @@ from periods import (PeriodError, check_period_dates, close_blockers, close_peri
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def parse_sound(raw_url, raw_every):
+    """Geluid-link en interval. Toegestaan: 'piep', een http(s)-link of een pad onder /static/."""
+    url = (raw_url or "").strip()
+    if url and url != "piep" and not (url.startswith(("http://", "https://")) or url.startswith("/static/")):
+        raise FormError("Geluid-link: gebruik een https-link, een pad als /static/sounds/ei.mp3, of het woord piep.")
+    every = parse_int(raw_every, "Geluid elke … stuks", 3)
+    if every < 1 or every > 100:
+        raise FormError("Geluid elke … stuks: kies een getal tussen 1 en 100.")
+    return (url or None), every
+
+
 app = Flask(__name__)
 
 # Gebruik DATABASE_URL omgevingsvariabele (Railway/Supabase), anders lokale SQLite
@@ -148,12 +159,18 @@ def add_tally():
     db.session.add(tally)
     db.session.commit()
 
+    total = (
+        db.session.query(db.func.coalesce(db.func.sum(Tally.quantity), 0))
+        .filter(Tally.period_id == period.id, Tally.user_id == user.id, Tally.product_id == product.id)
+        .scalar()
+    )
     return jsonify({
         "ok": True,
         "tally_id": tally.id,
         "user": user.name,
         "product": product.name,
         "quantity": tally.quantity,
+        "total": int(total),
     })
 
 
@@ -337,11 +354,13 @@ def admin_products():
             emoji = request.form.get("emoji", "🍺").strip()
             sort_order = parse_int(request.form.get("sort_order"), "Volgorde", 0)
             image_url = request.form.get("image_url", "").strip() or None
+            sound_url, sound_every = parse_sound(request.form.get("sound_url"), request.form.get("sound_every"))
             parent_product_id = request.form.get("parent_product_id") or None
             parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
             if name:
                 product = Product(name=name, price_cents=price_cents, emoji=emoji, sort_order=sort_order,
-                                  image_url=image_url, parent_product_id=parent_product_id,
+                                  image_url=image_url, sound_url=sound_url, sound_every=sound_every,
+                                  parent_product_id=parent_product_id,
                                   parent_units=parent_units)
                 db.session.add(product)
                 db.session.commit()
@@ -354,6 +373,7 @@ def admin_products():
                 product.sort_order = parse_int(request.form.get("sort_order"), "Volgorde", product.sort_order)
                 product.is_active = "is_active" in request.form
                 product.image_url = request.form.get("image_url", "").strip() or None
+                product.sound_url, product.sound_every = parse_sound(request.form.get("sound_url"), request.form.get("sound_every"))
                 product.parent_product_id = request.form.get("parent_product_id") or None
                 product.parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
                 db.session.commit()

@@ -216,17 +216,17 @@ textarea.input { padding: var(--space-2) var(--space-3); min-height: 80px; }
 .product-btn.selected { border-color: var(--accent); background: var(--accent-bg); }
 
 .user-scroll { flex: 1; min-height: 0; padding: 2px; }
-.user-grid { display: grid; grid-auto-flow: column; width: max-content; gap: var(--space-3);
+.user-grid { display: grid; grid-auto-flow: column; width: max-content; margin: 0 auto; gap: var(--space-3);
   grid-template-rows: repeat(3, var(--utile, 180px)); grid-auto-columns: var(--utile, 180px); }
 .user-btn {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  width: var(--utile, 180px); height: var(--utile, 180px); padding: var(--space-2);
+  position: relative; width: var(--utile, 180px); height: var(--utile, 180px); padding: var(--space-2);
   background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius);
   color: var(--text); font: inherit; cursor: pointer; user-select: none; transition: transform .08s, background .12s, border-color .12s;
 }
 .user-btn:active { transform: scale(.95); }
 .user-btn .uname { font-size: 34px; font-weight: 700; text-align: center; line-height: 1.1; overflow-wrap: anywhere; }
-.user-btn .ucount { display: flex; align-items: baseline; gap: 6px; min-height: 36px; font-variant-numeric: tabular-nums; }
+.user-btn .ucount { position: absolute; left: 0; right: 0; bottom: 14px; justify-content: center; display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
 .user-btn .ucount .n { font-size: 30px; font-weight: 700; line-height: 1; color: var(--accent); }
 .user-btn .ucount .p { font-size: 20px; font-weight: 500; color: var(--text-2); }
 .user-btn.hit { background: var(--accent-bg); border-color: var(--accent); }
