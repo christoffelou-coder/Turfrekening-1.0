@@ -1,5 +1,6 @@
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from datetime import date, datetime
 from dotenv import load_dotenv
 from flask_migrate import Migrate
@@ -18,6 +19,8 @@ from calculations import (
 )
 
 from models import PeriodStartBalance
+from auth import bp as auth_bp, admin_required
+from forms import FormError, parse_date, parse_float, parse_int
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -41,10 +44,36 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.secret_key = os.environ.get("SECRET_KEY", "turfrekening-secret-2024")
+_secret = os.environ.get("SECRET_KEY")
+if not _secret:
+    if os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development":
+        _secret = "alleen-lokaal-ontwikkelen"
+    else:
+        raise RuntimeError("SECRET_KEY ontbreekt. Zet die als omgevingsvariabele (alleen lokaal mag FLASK_DEBUG=1).")
+app.secret_key = _secret
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("DATABASE_URL"))
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 12
 
 db.init_app(app)
 migrate = Migrate(app, db)
+csrf = CSRFProtect(app)
+app.register_blueprint(auth_bp)
+
+
+@app.errorhandler(FormError)
+def _form_error(err):
+    flash(str(err), "error")
+    return redirect(request.referrer or url_for("admin"))
+
+
+@app.errorhandler(CSRFError)
+def _csrf_error(err):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Sessie verlopen, ververs de pagina."}), 400
+    flash("Sessie verlopen, probeer het opnieuw.", "error")
+    return redirect(request.referrer or url_for("index"))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -72,21 +101,35 @@ def index():
 
 @app.route("/api/tally", methods=["POST"])
 def add_tally():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Ongeldige aanvraag"}), 400
     period = get_active_period()
     if not period:
         return jsonify({"error": "Geen actieve periode"}), 400
 
-    user = db.session.get(User, data["user_id"])
-    product = db.session.get(Product, data["product_id"])
+    try:
+        user_id = int(data["user_id"])
+        product_id = int(data["product_id"])
+        quantity = int(data.get("quantity", 1))
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Ongeldige aanvraag"}), 400
+    # Negatief = een turfje terugdraaien (min-knop op het turfscherm)
+    if quantity == 0 or abs(quantity) > 24:
+        return jsonify({"error": "Aantal moet tussen 1 en 24 liggen"}), 400
+
+    user = db.session.get(User, user_id)
+    product = db.session.get(Product, product_id)
     if not user or not product:
         return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
+    if not user.is_active or not product.is_active:
+        return jsonify({"error": "Gebruiker of product is niet actief"}), 400
 
     tally = Tally(
         period_id=period.id,
         user_id=user.id,
         product_id=product.id,
-        quantity=data.get("quantity", 1),
+        quantity=quantity,
     )
     db.session.add(tally)
     db.session.commit()
@@ -183,6 +226,7 @@ def rapport(period_id=None):
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/admin")
+@admin_required
 def admin():
     period = get_active_period()
     users = User.query.order_by(User.sort_order, User.name).all()
@@ -193,6 +237,7 @@ def admin():
 
 # Vorige standen
 @app.route("/admin/vorige-stand", methods=["GET"])
+@admin_required
 def admin_vorige_stand():
     periods = Period.query.order_by(Period.start_date.desc()).all()
     active = get_active_period()
@@ -200,6 +245,7 @@ def admin_vorige_stand():
 
 
 @app.route("/admin/vorige-stand/<int:period_id>", methods=["GET", "POST"])
+@admin_required
 def admin_vorige_stand_period(period_id):
     period = db.session.get(Period, period_id)
     if not period:
@@ -212,14 +258,14 @@ def admin_vorige_stand_period(period_id):
         PeriodStartBalance.query.filter_by(period_id=period_id).delete()
         for u in users:
             val = request.form.get(f"balance_{u.id}", "").strip()
-            balance = float(val) if val else 0.0
+            balance = parse_float(val, "Beginstand", 0.0)
             db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance=balance))
         # Als het de actieve periode is, ook previous_balance updaten
         if period.is_active:
             for u in users:
                 val = request.form.get(f"balance_{u.id}", "").strip()
                 if val:
-                    u.previous_balance = float(val)
+                    u.previous_balance = parse_float(val, "Beginstand")
         db.session.commit()
         return redirect(url_for("admin_vorige_stand_period", period_id=period_id))
 
@@ -235,6 +281,7 @@ def admin_vorige_stand_period(period_id):
 
 # Gebruikers
 @app.route("/admin/users", methods=["GET", "POST"])
+@admin_required
 def admin_users():
     if request.method == "POST":
         action = request.form.get("action")
@@ -242,19 +289,19 @@ def admin_users():
             name = request.form.get("name", "").strip()
             if name:
                 max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
-                user = User(name=name, previous_balance=float(request.form.get("previous_balance", 0)), sort_order=max_order + 1)
+                user = User(name=name, previous_balance=parse_float(request.form.get("previous_balance"), "Vorige stand", 0.0), sort_order=max_order + 1)
                 db.session.add(user)
                 db.session.commit()
         elif action == "edit":
-            user = db.session.get(User, request.form.get("user_id"))
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
             if user:
                 user.name = request.form.get("name", user.name).strip()
                 user.is_active = "is_active" in request.form
                 user.participates_in_ho = "participates_in_ho" in request.form
-                user.previous_balance = float(request.form.get("previous_balance", user.previous_balance))
+                user.previous_balance = parse_float(request.form.get("previous_balance"), "Vorige stand", user.previous_balance)
                 db.session.commit()
         elif action == "delete":
-            user = db.session.get(User, request.form.get("user_id"))
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
             if user:
                 try:
                     # Verwijder eerst alle gekoppelde financiële data — anders
@@ -283,17 +330,18 @@ def admin_users():
 
 # Producten
 @app.route("/admin/products", methods=["GET", "POST"])
+@admin_required
 def admin_products():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
             name = request.form.get("name", "").strip()
-            price = float(request.form.get("price", 0))
+            price = parse_float(request.form.get("price"), "Prijs")
             emoji = request.form.get("emoji", "🍺").strip()
-            sort_order = int(request.form.get("sort_order", 0))
+            sort_order = parse_int(request.form.get("sort_order"), "Volgorde", 0)
             image_url = request.form.get("image_url", "").strip() or None
             parent_product_id = request.form.get("parent_product_id") or None
-            parent_units = int(request.form.get("parent_units", 1) or 1)
+            parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
             if name:
                 product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order,
                                   image_url=image_url, parent_product_id=parent_product_id,
@@ -301,19 +349,19 @@ def admin_products():
                 db.session.add(product)
                 db.session.commit()
         elif action == "edit":
-            product = db.session.get(Product, request.form.get("product_id"))
+            product = db.session.get(Product, parse_int(request.form.get("product_id"), "Id"))
             if product:
                 product.name = request.form.get("name", product.name).strip()
-                product.price = float(request.form.get("price", product.price))
+                product.price = parse_float(request.form.get("price"), "Prijs", product.price)
                 product.emoji = request.form.get("emoji", product.emoji).strip()
-                product.sort_order = int(request.form.get("sort_order", product.sort_order))
+                product.sort_order = parse_int(request.form.get("sort_order"), "Volgorde", product.sort_order)
                 product.is_active = "is_active" in request.form
                 product.image_url = request.form.get("image_url", "").strip() or None
                 product.parent_product_id = request.form.get("parent_product_id") or None
-                product.parent_units = int(request.form.get("parent_units", 1) or 1)
+                product.parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
                 db.session.commit()
         elif action == "delete":
-            product = db.session.get(Product, request.form.get("product_id"))
+            product = db.session.get(Product, parse_int(request.form.get("product_id"), "Id"))
             if product:
                 db.session.delete(product)
                 db.session.commit()
@@ -325,14 +373,15 @@ def admin_products():
 
 # Periodes
 @app.route("/admin/periods", methods=["GET", "POST"])
+@admin_required
 def admin_periods():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
             name = request.form.get("name", "").strip()
-            start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
+            start_date = parse_date(request.form.get("start_date"), "Startdatum")
             source_period_id = request.form.get("source_period_id") or None
-            bron = db.session.get(Period, int(source_period_id)) if source_period_id else get_active_period()
+            bron = db.session.get(Period, parse_int(source_period_id, "Bronperiode")) if source_period_id else get_active_period()
             if bron:
                 users = User.query.all()
                 stands = get_stands_bulk(bron.id, users)
@@ -346,7 +395,7 @@ def admin_periods():
             save_period_start_balances(new_period.id, users)
             db.session.commit()
         elif action == "copy_balances":
-            source_period_id = int(request.form.get("source_period_id"))
+            source_period_id = parse_int(request.form.get("source_period_id"), "Bronperiode")
             bron = db.session.get(Period, source_period_id)
             active = get_active_period()
             if bron and active:
@@ -357,27 +406,27 @@ def admin_periods():
                 save_period_start_balances(active.id, users)
                 db.session.commit()
         elif action == "delete":
-            period = Period.query.get(int(request.form.get("period_id")))
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
             if period and not period.is_active:
                 db.session.delete(period)
                 db.session.commit()
         elif action == "activate":
             Period.query.update({"is_active": False})
             db.session.flush()
-            period = Period.query.get(int(request.form.get("period_id")))
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
             if period:
                 period.is_active = True
                 db.session.commit()
         elif action == "close":
-            period = Period.query.get(int(request.form.get("period_id")))
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
             if period:
                 end_date_str = request.form.get("end_date", "").strip()
                 if end_date_str:
-                    period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                    period.end_date = parse_date(end_date_str, "Einddatum")
                 period.is_active = False
                 db.session.commit()
         elif action == "edit":
-            period = Period.query.get(int(request.form.get("period_id")))
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
             if period:
                 name = request.form.get("name", "").strip()
                 start_date_str = request.form.get("start_date", "")
@@ -385,8 +434,8 @@ def admin_periods():
                 if name:
                     period.name = name
                 if start_date_str:
-                    period.start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-                period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
+                    period.start_date = parse_date(start_date_str, "Startdatum")
+                period.end_date = parse_date(end_date_str, "Einddatum") if end_date_str else None
                 db.session.commit()
         return redirect(url_for("admin_periods"))
 
@@ -396,6 +445,7 @@ def admin_periods():
 
 # Voorraad
 @app.route("/admin/inventory", methods=["GET", "POST"])
+@admin_required
 def admin_inventory():
     period = get_active_period()
     if not period:
@@ -409,7 +459,7 @@ def admin_inventory():
             for key, val in request.form.items():
                 if key.startswith("qty_"):
                     product_id = int(key[4:])
-                    qty = int(val or 0)
+                    qty = parse_int(val, "Aantal", 0)
                     # Update or create snapshot
                     snap = InventorySnapshot.query.filter_by(
                         period_id=period.id, product_id=product_id, snapshot_type=snap_type
@@ -426,15 +476,15 @@ def admin_inventory():
             db.session.commit()
 
         elif action == "purchase":
-            product_id = int(request.form.get("product_id"))
-            quantity = int(request.form.get("quantity", 0))
+            product_id = parse_int(request.form.get("product_id"), "Product")
+            quantity = parse_int(request.form.get("quantity"), "Aantal")
             total_cost = request.form.get("total_cost")
             notes = request.form.get("notes", "").strip()
             purchase = InventoryPurchase(
                 period_id=period.id,
                 product_id=product_id,
                 quantity=quantity,
-                total_cost=float(total_cost) if total_cost else None,
+                total_cost=parse_float(total_cost, "Kosten") if total_cost else None,
                 notes=notes,
                 date=date.today(),
             )
@@ -442,7 +492,7 @@ def admin_inventory():
             db.session.commit()
 
         elif action == "delete_purchase":
-            purchase = db.session.get(InventoryPurchase, request.form.get("purchase_id"))
+            purchase = db.session.get(InventoryPurchase, parse_int(request.form.get("purchase_id"), "Id"))
             if purchase:
                 db.session.delete(purchase)
                 db.session.commit()
@@ -476,6 +526,7 @@ def admin_inventory():
 
 # Betalingen
 @app.route("/admin/payments", methods=["GET", "POST"])
+@admin_required
 def admin_payments():
     period = get_active_period()
     if not period:
@@ -484,9 +535,9 @@ def admin_payments():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
-            user_id = int(request.form.get("user_id"))
-            amount = float(request.form.get("amount", 0))
-            pay_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
+            user_id = parse_int(request.form.get("user_id"), "Persoon")
+            amount = parse_float(request.form.get("amount"), "Bedrag")
+            pay_date = parse_date(request.form.get("date"), "Datum")
             notes = request.form.get("notes", "").strip()
             payment = Payment(
                 period_id=period.id, user_id=user_id, amount=amount,
@@ -495,7 +546,7 @@ def admin_payments():
             db.session.add(payment)
             db.session.commit()
         elif action == "delete":
-            payment = db.session.get(Payment, request.form.get("payment_id"))
+            payment = db.session.get(Payment, parse_int(request.form.get("payment_id"), "Id"))
             if payment:
                 db.session.delete(payment)
                 db.session.commit()
@@ -521,6 +572,7 @@ def admin_payments():
 
 # Correcties
 @app.route("/admin/corrections", methods=["GET", "POST"])
+@admin_required
 def admin_corrections():
     period = get_active_period()
     if not period:
@@ -529,10 +581,10 @@ def admin_corrections():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
-            user_id = int(request.form.get("user_id"))
-            amount = float(request.form.get("amount", 0))
+            user_id = parse_int(request.form.get("user_id"), "Persoon")
+            amount = parse_float(request.form.get("amount"), "Bedrag")
             description = request.form.get("description", "").strip()
-            corr_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
+            corr_date = parse_date(request.form.get("date"), "Datum")
             corr = Correction(
                 period_id=period.id, user_id=user_id, amount=amount,
                 description=description, date=corr_date
@@ -540,7 +592,7 @@ def admin_corrections():
             db.session.add(corr)
             db.session.commit()
         elif action == "delete":
-            corr = db.session.get(Correction, request.form.get("correction_id"))
+            corr = db.session.get(Correction, parse_int(request.form.get("correction_id"), "Id"))
             if corr:
                 db.session.delete(corr)
                 db.session.commit()
@@ -563,6 +615,7 @@ def admin_corrections():
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/ho", methods=["GET", "POST"])
+@admin_required
 def ho():
     period = get_active_period()
     if not period:
@@ -573,17 +626,17 @@ def ho():
 
         if action == "add_event":
             name = request.form.get("name", "").strip()
-            base_cost = float(request.form.get("total_cost", 0) or 0)
+            base_cost = parse_float(request.form.get("total_cost"), "Kosten", 0.0)
             distribution_type = request.form.get("distribution_type", "equal_all")
             notes = request.form.get("notes", "").strip()
-            ev_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
+            ev_date = parse_date(request.form.get("date"), "Datum")
 
             beer_product_id = request.form.get("beer_product_id") or None
             beer_quantity = request.form.get("beer_quantity") or None
             beer_cost = 0.0
             if beer_product_id and beer_quantity:
-                beer_product_id = int(beer_product_id)
-                beer_quantity = int(beer_quantity)
+                beer_product_id = parse_int(beer_product_id, "Bierproduct")
+                beer_quantity = parse_int(beer_quantity, "Aantal bier")
                 bp = db.session.get(Product, beer_product_id)
                 if bp:
                     beer_cost = bp.price * beer_quantity
@@ -617,13 +670,13 @@ def ho():
                         if amount_str:
                             share = HOEventShare(
                                 ho_event_id=event.id, user_id=u.id,
-                                amount=float(amount_str)
+                                amount=parse_float(amount_str, "Aandeel")
                             )
                             db.session.add(share)
             db.session.commit()
 
         elif action == "delete_event":
-            event = db.session.get(HOEvent, request.form.get("event_id"))
+            event = db.session.get(HOEvent, parse_int(request.form.get("event_id"), "Id"))
             if event:
                 db.session.delete(event)
                 db.session.commit()

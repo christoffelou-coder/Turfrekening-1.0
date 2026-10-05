@@ -5,6 +5,7 @@ import tempfile
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ["SECRET_KEY"] = "test"
+os.environ["ADMIN_PASSWORD"] = "geheim"
 
 import pytest
 from datetime import date
@@ -16,7 +17,7 @@ from models import db, Period, User, Product
 @pytest.fixture()
 def app():
     flask_app = app_module.app
-    flask_app.config.update(TESTING=True)
+    flask_app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SESSION_COOKIE_SECURE=False)
     with flask_app.app_context():
         assert "sqlite" in str(db.engine.url), "Tests mogen alleen op SQLite draaien"
         db.drop_all()

@@ -233,7 +233,7 @@
   function addTally(userId, userName, qty) {
     fetch('/api/tally', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },
       body: JSON.stringify({ user_id: userId, product_id: selectedProductId, quantity: qty })
     })
     .then(r => r.json())

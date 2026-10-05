@@ -14,7 +14,7 @@
   <!-- Inkoop loggen -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
     <h2 class="font-semibold mb-3">📥 Inkoop registreren</h2>
-    <form method="POST" class="flex flex-wrap gap-3 items-end">
+    <form method="POST" class="flex flex-wrap gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="purchase" />
       <div>
         <label class="block text-xs text-gray-400 mb-1">Product</label>
@@ -67,7 +67,7 @@
           <td class="py-1.5 text-right">{% if p.total_cost %}€{{ '%.2f'|format(p.total_cost)|replace('.', ',') }}{% else %}-{% endif %}</td>
           <td class="py-1.5 text-gray-400">{{ p.notes or '' }}</td>
           <td class="py-1.5">
-            <form method="POST" class="inline">
+            <form method="POST" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="delete_purchase" />
               <input type="hidden" name="purchase_id" value="{{ p.id }}" />
               <button class="text-red-400 hover:text-red-300 text-xs">✕</button>
@@ -85,7 +85,7 @@
     {% for snap_type, label, icon in [('begin', 'Beginstand', '▶'), ('end', 'Eindstand', '⏹')] %}
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
       <h2 class="font-semibold mb-3">{{ icon }} {{ label }} invullen</h2>
-      <form method="POST">
+      <form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="snapshot" />
         <input type="hidden" name="snapshot_type" value="{{ snap_type }}" />
         <div class="space-y-2">

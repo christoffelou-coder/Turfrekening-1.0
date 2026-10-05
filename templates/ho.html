@@ -78,7 +78,7 @@
   <!-- HO Event toevoegen -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
     <h2 class="font-semibold mb-3">+ Nieuw HO-event</h2>
-    <form method="POST" id="hoForm">
+    <form method="POST" id="hoForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add_event" />
 
       <!-- Basisvelden -->
@@ -198,7 +198,7 @@
             </div>
             {% endif %}
           </div>
-          <form method="POST" class="inline ml-3">
+          <form method="POST" class="inline ml-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete_event" />
             <input type="hidden" name="event_id" value="{{ event.id }}" />
             <button class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded bg-gray-600 hover:bg-gray-500">✕ Verwijder</button>

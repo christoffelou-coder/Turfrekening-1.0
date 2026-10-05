@@ -34,7 +34,7 @@
     Positief = tegoed, negatief = schuld.
   </p>
 
-  <form method="POST">
+  <form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden mb-4">
       <table class="w-full text-sm">
         <thead>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Inloggen · Turfrekening{% endblock %}
+{% block content %}
+<div class="max-w-sm mx-auto mt-16 px-4">
+  <h1 class="text-xl font-semibold mb-4">Admin inloggen</h1>
+  <form method="POST" class="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="block text-sm text-gray-400">Wachtwoord
+      <input type="password" name="password" autofocus required
+             class="mt-1 w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white">
+    </label>
+    <button class="w-full bg-amber-500 text-black font-medium rounded-lg py-2.5">Inloggen</button>
+  </form>
+</div>
+{% endblock %}

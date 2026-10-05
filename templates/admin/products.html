@@ -10,7 +10,7 @@
   <!-- Nieuw product -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
     <h2 class="font-semibold mb-3">Nieuw product</h2>
-    <form method="POST" class="flex flex-wrap gap-3 items-end">
+    <form method="POST" class="flex flex-wrap gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add" />
       <div>
         <label class="block text-xs text-gray-400 mb-1">Naam</label>
@@ -75,7 +75,7 @@
       </div>
       <details class="text-sm">
         <summary class="cursor-pointer text-gray-400 hover:text-white px-3 py-1 bg-gray-700 rounded-lg">Bewerken</summary>
-        <form method="POST" class="mt-2 flex flex-wrap gap-2 items-end bg-gray-700 p-3 rounded-lg">
+        <form method="POST" class="mt-2 flex flex-wrap gap-2 items-end bg-gray-700 p-3 rounded-lg"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="edit" />
           <input type="hidden" name="product_id" value="{{ product.id }}" />
           <div>

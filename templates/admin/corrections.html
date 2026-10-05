@@ -16,7 +16,7 @@
   <!-- Toevoegen -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
     <h2 class="font-semibold mb-3">Nieuwe correctie</h2>
-    <form method="POST" class="flex flex-wrap gap-3 items-end">
+    <form method="POST" class="flex flex-wrap gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add" />
       <div>
         <label class="block text-xs text-gray-400 mb-1">Persoon</label>
@@ -66,7 +66,7 @@
           </td>
           <td class="py-1.5 text-gray-400">{{ c.description or '' }}</td>
           <td class="py-1.5">
-            <form method="POST" class="inline">
+            <form method="POST" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="delete" />
               <input type="hidden" name="correction_id" value="{{ c.id }}" />
               <button class="text-red-400 hover:text-red-300 text-xs">✕</button>
