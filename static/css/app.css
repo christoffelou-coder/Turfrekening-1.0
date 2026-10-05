@@ -189,3 +189,50 @@ textarea.input { padding: var(--space-2) var(--space-3); min-height: 80px; }
   .table-wrap { max-height: none; overflow: visible; }
   a { color: #000; }
 }
+
+/* ══ Turfscherm (iPad, liggend) ══ */
+.turf { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding: var(--space-4) var(--space-5); gap: var(--space-4); }
+.turf-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-shrink: 0; }
+.turf-head .brand { font-size: 17px; font-weight: 600; }
+.turf-label { color: var(--text-muted); font-size: 13px; margin: 0 0 var(--space-2); }
+
+.product-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-3); flex-shrink: 0; }
+.product-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  min-height: 92px; padding: var(--space-2);
+  background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font: inherit; cursor: pointer; user-select: none; transition: transform .08s, border-color .1s, background .1s;
+}
+.product-btn:active { transform: scale(.96); }
+.product-btn .emoji { font-size: 32px; line-height: 1; }
+.product-btn .name { font-size: 15px; font-weight: 500; }
+.product-btn.selected { border-color: var(--accent); background: var(--accent-bg); }
+
+.user-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: minmax(80px, 1fr); gap: var(--space-3); }
+.user-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 80px; padding: var(--space-2);
+  background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font: inherit; cursor: pointer; user-select: none; transition: transform .08s, background .12s, border-color .12s;
+}
+.user-btn:active { transform: scale(.95); }
+.user-btn .uname { font-size: 18px; font-weight: 500; }
+.user-btn .ucount { font-size: 13px; color: var(--text-muted); min-height: 18px; font-variant-numeric: tabular-nums; }
+.user-btn.hit { background: var(--accent-bg); border-color: var(--accent); }
+.user-grid.locked .user-btn { opacity: .35; pointer-events: none; }
+.user-grid.correcting .user-btn { border-color: var(--negative); }
+
+.turf-bar {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4); min-height: 64px;
+}
+.turf-bar .last { color: var(--text-2); }
+.turf-bar .last .when { color: var(--text-muted); }
+.turf-bar .err { color: var(--negative); }
+.btn.is-on { background: var(--negative); border-color: var(--negative); color: #fff; }
+
+@media (max-width: 700px) {
+  .user-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow-y: auto; }
+  .turf { padding: var(--space-3); }
+}

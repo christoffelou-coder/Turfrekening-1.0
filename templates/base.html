@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json" />
   <title>{% block title %}Turfrekening{% endblock %}</title>
   {# Tailwind blijft tijdelijk staan voor schermen die nog niet zijn omgezet; verdwijnt aan het eind van stap G. #}
-  <script src="https://cdn.tailwindcss.com"></script>
+  {% block legacy_css %}<script src="https://cdn.tailwindcss.com"></script>{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ css_version }}" />
   {% block head %}{% endblock %}
 </head>

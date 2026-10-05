@@ -1,7 +1,7 @@
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_wtf.csrf import CSRFProtect, CSRFError
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from flask_migrate import Migrate
 from sqlalchemy.exc import IntegrityError
@@ -96,7 +96,7 @@ def _csrf_error(err):
 @app.route("/")
 def index():
     period = get_active_period()
-    users = User.query.order_by(User.sort_order, User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
     # Saldo wordt niet meer getoond op het turfscherm (verwarrend zolang
@@ -147,37 +147,46 @@ def add_tally():
     db.session.add(tally)
     db.session.commit()
 
-    new_stand = get_stand(user, period.id)
     return jsonify({
         "ok": True,
         "tally_id": tally.id,
         "user": user.name,
         "product": product.name,
         "quantity": tally.quantity,
-        "new_stand": round(new_stand, 2),
     })
+
+
+UNDO_WINDOW = timedelta(minutes=10)
+
+
+def _is_undoable(tally):
+    """Alleen turfjes uit de actieve periode, en niet langer dan UNDO_WINDOW geleden."""
+    period = get_active_period()
+    return bool(
+        period and tally.period_id == period.id
+        and datetime.utcnow() - tally.created_at <= UNDO_WINDOW
+    )
 
 
 @app.route("/api/tally/<int:tally_id>", methods=["DELETE"])
 def undo_tally(tally_id):
     tally = db.get_or_404(Tally, tally_id)
-    user = tally.user
-    period_id = tally.period_id
+    if not _is_undoable(tally):
+        return jsonify({"error": "Te lang geleden om ongedaan te maken. Gebruik een correctie."}), 403
     db.session.delete(tally)
     db.session.commit()
-    new_stand = get_stand(user, period_id)
-    return jsonify({"ok": True, "new_stand": round(new_stand, 2)})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/last-tally")
 def last_tally():
-    """Geeft het meest recente turfje terug (voor undo-knop)."""
+    """Geeft het meest recente turfje terug (voor de ongedaan-maken-balk)."""
     period = get_active_period()
     if not period:
         return jsonify({"tally": None})
     tally = (
         Tally.query.filter_by(period_id=period.id)
-        .order_by(Tally.created_at.desc())
+        .order_by(Tally.created_at.desc(), Tally.id.desc())
         .first()
     )
     if not tally:
@@ -188,7 +197,8 @@ def last_tally():
             "user": tally.user.name,
             "product": tally.product.name,
             "quantity": tally.quantity,
-            "created_at": tally.created_at.strftime("%H:%M"),
+            "created_at": tally.created_at.isoformat() + "Z",
+            "undoable": _is_undoable(tally),
         }
     })
 
