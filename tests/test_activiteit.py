@@ -46,3 +46,12 @@ def test_api_nieuwste_eerst(client, basis):
     tally(basis, minutes_ago=2)
     ev = client.get("/api/activity").get_json()["events"]
     assert ev[0]["t"] > ev[1]["t"]
+
+
+def test_activiteit_heeft_geen_weg_naar_admin_of_rapport(client, basis):
+    html = client.get("/activiteit").get_data(as_text=True)
+    assert "/admin" not in html and "/rapport" not in html and 'href="/"' in html
+
+
+def test_turfscherm_heeft_activiteitknop(client, basis):
+    assert 'href="/activiteit"' in client.get("/").get_data(as_text=True)
