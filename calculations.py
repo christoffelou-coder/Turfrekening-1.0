@@ -334,7 +334,7 @@ def get_period_overview(period_id):
     Genereert het volledige maandoverzicht voor een periode.
     Alles wordt in bulk opgehaald — geen N+1 queries.
     """
-    period = Period.query.get(period_id)
+    period = db.session.get(Period, period_id)
     users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 

@@ -2,7 +2,7 @@ import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from datetime import date, datetime
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler
+from flask_migrate import Migrate
 from sqlalchemy.exc import IntegrityError
 
 load_dotenv()
@@ -44,38 +44,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.secret_key = os.environ.get("SECRET_KEY", "turfrekening-secret-2024")
 
 db.init_app(app)
-
-
-# ─── Init DB ─────────────────────────────────────────────────────────────────
-
-@app.cli.command("init-db")
-def init_db():
-    db.create_all()
-    print("Database aangemaakt.")
-
-
-def create_tables():
-    with app.app_context():
-        db.create_all()
-        from sqlalchemy import text
-        try:
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT"))
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id INTEGER REFERENCES products(id)"))
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_units INTEGER DEFAULT 1"))
-            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_product_id INTEGER REFERENCES products(id)"))
-            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_quantity INTEGER"))
-            db.session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS participates_in_ho BOOLEAN DEFAULT TRUE"))
-            db.session.execute(text("""
-                CREATE TABLE IF NOT EXISTS period_start_balances (
-                    id SERIAL PRIMARY KEY,
-                    period_id INTEGER REFERENCES periods(id) ON DELETE CASCADE,
-                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                    balance FLOAT NOT NULL
-                )
-            """))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+migrate = Migrate(app, db)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -108,8 +77,8 @@ def add_tally():
     if not period:
         return jsonify({"error": "Geen actieve periode"}), 400
 
-    user = User.query.get(data["user_id"])
-    product = Product.query.get(data["product_id"])
+    user = db.session.get(User, data["user_id"])
+    product = db.session.get(Product, data["product_id"])
     if not user or not product:
         return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
 
@@ -135,7 +104,7 @@ def add_tally():
 
 @app.route("/api/tally/<int:tally_id>", methods=["DELETE"])
 def undo_tally(tally_id):
-    tally = Tally.query.get_or_404(tally_id)
+    tally = db.get_or_404(Tally, tally_id)
     user = tally.user
     period_id = tally.period_id
     db.session.delete(tally)
@@ -183,7 +152,7 @@ def product_counts(product_id):
 
 @app.route("/api/balance/<int:user_id>")
 def get_balance(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     period = get_active_period()
     if not period:
         return jsonify({"stand": user.previous_balance})
@@ -232,7 +201,7 @@ def admin_vorige_stand():
 
 @app.route("/admin/vorige-stand/<int:period_id>", methods=["GET", "POST"])
 def admin_vorige_stand_period(period_id):
-    period = Period.query.get(period_id)
+    period = db.session.get(Period, period_id)
     if not period:
         return redirect(url_for("admin_vorige_stand"))
 
@@ -277,7 +246,7 @@ def admin_users():
                 db.session.add(user)
                 db.session.commit()
         elif action == "edit":
-            user = User.query.get(request.form.get("user_id"))
+            user = db.session.get(User, request.form.get("user_id"))
             if user:
                 user.name = request.form.get("name", user.name).strip()
                 user.is_active = "is_active" in request.form
@@ -285,7 +254,7 @@ def admin_users():
                 user.previous_balance = float(request.form.get("previous_balance", user.previous_balance))
                 db.session.commit()
         elif action == "delete":
-            user = User.query.get(request.form.get("user_id"))
+            user = db.session.get(User, request.form.get("user_id"))
             if user:
                 try:
                     # Verwijder eerst alle gekoppelde financiële data — anders
@@ -332,7 +301,7 @@ def admin_products():
                 db.session.add(product)
                 db.session.commit()
         elif action == "edit":
-            product = Product.query.get(request.form.get("product_id"))
+            product = db.session.get(Product, request.form.get("product_id"))
             if product:
                 product.name = request.form.get("name", product.name).strip()
                 product.price = float(request.form.get("price", product.price))
@@ -344,7 +313,7 @@ def admin_products():
                 product.parent_units = int(request.form.get("parent_units", 1) or 1)
                 db.session.commit()
         elif action == "delete":
-            product = Product.query.get(request.form.get("product_id"))
+            product = db.session.get(Product, request.form.get("product_id"))
             if product:
                 db.session.delete(product)
                 db.session.commit()
@@ -363,7 +332,7 @@ def admin_periods():
             name = request.form.get("name", "").strip()
             start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
             source_period_id = request.form.get("source_period_id") or None
-            bron = Period.query.get(int(source_period_id)) if source_period_id else get_active_period()
+            bron = db.session.get(Period, int(source_period_id)) if source_period_id else get_active_period()
             if bron:
                 users = User.query.all()
                 stands = get_stands_bulk(bron.id, users)
@@ -378,7 +347,7 @@ def admin_periods():
             db.session.commit()
         elif action == "copy_balances":
             source_period_id = int(request.form.get("source_period_id"))
-            bron = Period.query.get(source_period_id)
+            bron = db.session.get(Period, source_period_id)
             active = get_active_period()
             if bron and active:
                 users = User.query.all()
@@ -473,7 +442,7 @@ def admin_inventory():
             db.session.commit()
 
         elif action == "delete_purchase":
-            purchase = InventoryPurchase.query.get(request.form.get("purchase_id"))
+            purchase = db.session.get(InventoryPurchase, request.form.get("purchase_id"))
             if purchase:
                 db.session.delete(purchase)
                 db.session.commit()
@@ -526,7 +495,7 @@ def admin_payments():
             db.session.add(payment)
             db.session.commit()
         elif action == "delete":
-            payment = Payment.query.get(request.form.get("payment_id"))
+            payment = db.session.get(Payment, request.form.get("payment_id"))
             if payment:
                 db.session.delete(payment)
                 db.session.commit()
@@ -571,7 +540,7 @@ def admin_corrections():
             db.session.add(corr)
             db.session.commit()
         elif action == "delete":
-            corr = Correction.query.get(request.form.get("correction_id"))
+            corr = db.session.get(Correction, request.form.get("correction_id"))
             if corr:
                 db.session.delete(corr)
                 db.session.commit()
@@ -615,7 +584,7 @@ def ho():
             if beer_product_id and beer_quantity:
                 beer_product_id = int(beer_product_id)
                 beer_quantity = int(beer_quantity)
-                bp = Product.query.get(beer_product_id)
+                bp = db.session.get(Product, beer_product_id)
                 if bp:
                     beer_cost = bp.price * beer_quantity
             else:
@@ -654,7 +623,7 @@ def ho():
             db.session.commit()
 
         elif action == "delete_event":
-            event = HOEvent.query.get(request.form.get("event_id"))
+            event = db.session.get(HOEvent, request.form.get("event_id"))
             if event:
                 db.session.delete(event)
                 db.session.commit()
@@ -701,44 +670,5 @@ def manifest():
     })
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# GOOGLE SHEETS SYNC
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route("/api/sync-sheets", methods=["POST"])
-def sync_sheets():
-    try:
-        from sheets_sync import sync_all
-        result = sync_all(app)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/setup-tabs", methods=["POST"])
-def setup_tabs():
-    try:
-        from sheets_sync import setup_new_tabs
-        result = setup_new_tabs(app)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-def _scheduled_sync():
-    try:
-        from sheets_sync import sync_all
-        result = sync_all(app)
-        print(f"[Sheets sync] {result}")
-    except Exception as e:
-        print(f"[Sheets sync] Fout: {e}")
-
-
 if __name__ == "__main__":
-    create_tables()
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_scheduled_sync, "cron", hour=2, minute=0)
-    scheduler.start()
-
-    app.run(host="0.0.0.0", port=8080, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=8080, debug=os.environ.get("FLASK_DEBUG") == "1", use_reloader=False)

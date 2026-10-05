@@ -21,3 +21,6 @@ public/
 # Build
 dist/
 build/
+
+.venv/
+.pytest_cache/
