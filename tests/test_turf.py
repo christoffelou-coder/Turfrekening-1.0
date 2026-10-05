@@ -70,7 +70,7 @@ def test_turfscherm_geeft_geluid_door(client, basis):
     basis["pils"].sound_every = 3
     db.session.commit()
     html = client.get("/").get_data(as_text=True)
-    assert 'data-sound="piep"' in html and 'data-every="3"' in html and 'id="soundBtn"' in html
+    assert 'data-sound="piep"' in html and 'data-every="3"' in html and 'id="soundBtn"' not in html
 
 
 def test_turfscherm_blokkeert_zoomen(client, basis):

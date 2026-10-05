@@ -11,7 +11,6 @@
     </div>
     <div class="row">
       <a href="/activiteit" class="btn">Activiteit</a>
-      <button type="button" id="soundBtn" class="btn" aria-pressed="true">Geluid aan</button>
       <button type="button" id="correctBtn" class="btn">Correctie</button>
     </div>
   </header>
@@ -127,11 +126,7 @@
   }
 
   // ── Geluid: speelt direct bij de tik (iPad staat audio alleen toe binnen een tik) ──
-  let soundOn = true;
-  try { soundOn = localStorage.getItem('turfSound') !== 'off'; } catch (e) {}
-  const soundBtn = document.getElementById('soundBtn');
-  function renderSoundBtn() { soundBtn.textContent = soundOn ? 'Geluid aan' : 'Geluid uit'; soundBtn.setAttribute('aria-pressed', soundOn); }
-  renderSoundBtn();
+  const soundOn = true;
   let audioCtx = null;
   function piep() {
     try {
@@ -156,12 +151,6 @@
     // een geluid duurt hooguit een paar seconden, ook bij een lang bestand
     a._stop = setTimeout(() => { try { a.pause(); a.currentTime = 0; } catch (e) {} }, SOUND_MAX_MS);
   }
-  soundBtn.addEventListener('click', () => {
-    soundOn = !soundOn; renderSoundBtn();
-    try { localStorage.setItem('turfSound', soundOn ? 'on' : 'off'); } catch (e) {}
-    if (soundOn) { const u = product && product.sound; playSound(u || 'piep'); }
-  });
-
   $$('.product-btn').forEach(btn => btn.addEventListener('click', () => {
     $$('.product-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
