@@ -411,6 +411,13 @@ def get_period_overview(period_id):
     active_count = len(users)
     ho_per_person = total_ho / active_count if active_count > 0 else 0
 
+    ho_values = [r["ho"] for r in user_rows]
+    ho_uniform = bool(ho_values) and (max(ho_values) - min(ho_values)) < 0.005
+    end_counted = {
+        s.product_id for s in InventorySnapshot.query.filter_by(period_id=period_id, snapshot_type="end").all()
+    }
+    inventory_complete = bool(inventory) and all(r["product"].id in end_counted for r in inventory)
+
     return {
         "period": period,
         "users": users,
@@ -423,6 +430,8 @@ def get_period_overview(period_id):
         "total_ho": total_ho,
         "ho_per_person": ho_per_person,
         "active_count": active_count,
+        "ho_uniform": ho_uniform,
+        "inventory_complete": inventory_complete,
     }
 
 

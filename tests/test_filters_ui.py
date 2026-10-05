@@ -30,3 +30,10 @@ def test_dashboard_rendert(client, basis):
     html = r.get_data(as_text=True)
     assert r.status_code == 200 and "Periode afsluiten" in html and "Bewoners" in html
     assert "Vorige standen" not in html and "Maandrapport" not in html
+
+
+def test_rapport_rendert_met_euro_en_vlaggen(client, basis):
+    html = client.get("/rapport").get_data(as_text=True)
+    assert "Lopend, cijfers voorlopig" in html
+    assert "Voorraad nog niet geteld" in html
+    assert "€-" not in html and "%.2f" not in html
