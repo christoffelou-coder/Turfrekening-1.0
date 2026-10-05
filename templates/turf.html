@@ -135,12 +135,16 @@
       });
     } catch (e) {}
   }
+  const SOUND_MAX_MS = 3000;
   const audioCache = {};
   function playSound(url) {
     if (!soundOn || !url) return;
     if (url === 'piep') { piep(); return; }
     const a = audioCache[url] || (audioCache[url] = new Audio(url));
+    clearTimeout(a._stop);
     try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) {}
+    // een geluid duurt hooguit een paar seconden, ook bij een lang bestand
+    a._stop = setTimeout(() => { try { a.pause(); a.currentTime = 0; } catch (e) {} }, SOUND_MAX_MS);
   }
   soundBtn.addEventListener('click', () => {
     soundOn = !soundOn; renderSoundBtn();
