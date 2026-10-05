@@ -9,7 +9,6 @@ from tests.test_periods import vul
 
 @pytest.fixture()
 def admin(client, basis):
-    client.post("/login", data={"password": "geheim"})
     return client
 
 

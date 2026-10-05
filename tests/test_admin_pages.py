@@ -8,7 +8,6 @@ from models import (db, Payment, Correction, Product, Tally, HOEvent, HOEventSha
 
 @pytest.fixture()
 def admin(client, basis):
-    client.post("/login", data={"password": "geheim"})
     return client
 
 

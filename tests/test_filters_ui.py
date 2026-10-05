@@ -26,7 +26,6 @@ def test_nooit_dubbel_minteken():
 
 
 def test_dashboard_rendert(client, basis):
-    client.post("/login", data={"password": "geheim"})
     r = client.get("/admin")
     html = r.get_data(as_text=True)
     assert r.status_code == 200 and "Periode afsluiten" in html and "Bewoners" in html

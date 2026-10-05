@@ -2,34 +2,9 @@ import pytest
 from models import db, Tally, User
 
 
-@pytest.mark.parametrize("path", ["/admin", "/admin/users", "/admin/payments", "/ho", "/admin/periods"])
-def test_admin_vereist_login(client, basis, path):
-    r = client.get(path)
-    assert r.status_code == 302 and "/login" in r.headers["Location"]
-
-
-def test_admin_post_zonder_login_wijzigt_niets(client, basis):
-    r = client.post("/admin/users", data={"action": "add", "name": "Hacker"})
-    assert r.status_code == 302 and "/login" in r.headers["Location"]
-    assert User.query.filter_by(name="Hacker").count() == 0
-
-
-def test_turfscherm_en_rapport_zijn_open(client, basis):
-    assert client.get("/").status_code == 200
-    assert client.get("/rapport").status_code == 200
-
-
-def test_login_goed_en_fout(client, basis):
-    assert client.post("/login", data={"password": "fout"}).status_code == 200
-    assert client.get("/admin").status_code == 302
-    r = client.post("/login?next=/admin/users", data={"password": "geheim"})
-    assert r.headers["Location"].endswith("/admin/users")
-    assert client.get("/admin").status_code == 200
-
-
-def test_login_open_redirect_geblokkeerd(client):
-    r = client.post("/login?next=//evil.com", data={"password": "geheim"})
-    assert "evil.com" not in r.headers["Location"]
+def test_turfscherm_rapport_en_admin_zijn_bereikbaar(client, basis):
+    for path in ("/", "/rapport", "/admin", "/ho"):
+        assert client.get(path).status_code == 200, path
 
 
 def test_csrf_actief(app, basis):
@@ -66,7 +41,6 @@ def test_tally_ok(client, basis):
 
 
 def test_formulier_met_rommel_geeft_melding_geen_500(client, basis):
-    client.post("/login", data={"password": "geheim"})
     r = client.post("/admin/payments", data={"action": "add", "user_id": "1", "amount": "abc", "date": "2026-10-01"})
     assert r.status_code == 302
 

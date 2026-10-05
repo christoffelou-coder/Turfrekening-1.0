@@ -25,7 +25,7 @@ Zonder `DATABASE_URL` gebruikt de app lokaal `turfrekening.db` (staat in `.gitig
 
 Lokaal → GitHub → Railway (deployt vanaf `main`). Eerst op een branch werken. Start: `gunicorn app:app` (zie `railway.json`).
 
-Omgevingsvariabelen op Railway: `DATABASE_URL`, `SECRET_KEY` (verplicht, de app start zonder niet), `ADMIN_PASSWORD` (login voor `/admin` en `/ho`).
+Omgevingsvariabelen op Railway: `DATABASE_URL` en `SECRET_KEY` (verplicht voor CSRF-bescherming, de app start zonder niet). Er is bewust geen login: iedereen die de URL kent kan bij admin.
 
 **Databasewijzigingen** gaan via Flask-Migrate (`migrations/`). Draai ze niet automatisch bij het starten:
 
@@ -45,7 +45,6 @@ periods.py      afsluiten/bevriezen, nieuwe periode starten, datumcontroles, get
 money.py        centen-helpers (parse, weergave, split_even)
 filters.py      Jinja-filters euro / euro_cls
 forms.py        parse_int / parse_date helpers met nette foutmeldingen
-auth.py         admin-login (gedeeld wachtwoord)
 static/css/app.css  het hele stylesheet (tokens bovenaan); geen CSS-framework
 templates/      base.html, turf.html, rapport.html, ho.html, admin/*
 tests/          pytest
@@ -70,7 +69,7 @@ tests/          pytest
 
 **Ongedaan maken** van een turfje (`DELETE /api/tally/<id>`) mag alleen in de actieve periode en binnen 10 minuten. Daarna gebruik je een correctie (met verplichte omschrijving).
 
-**Beveiliging:** `/admin/*` en `/ho` vereisen login (`@admin_required`); turfscherm en rapport zijn open. Alle POST/DELETE hebben CSRF-bescherming (formulieren `csrf_token`, turfscherm header `X-CSRFToken`).
+**Beveiliging:** geen login (bewuste keuze van de beheerder). Alle POST/DELETE hebben wel CSRF-bescherming (formulieren `csrf_token`, turfscherm header `X-CSRFToken`).
 
 ## Gebruikersvolgorde
 

@@ -5,7 +5,6 @@ import tempfile
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ["SECRET_KEY"] = "test"
-os.environ["ADMIN_PASSWORD"] = "geheim"
 
 import pytest
 from datetime import date

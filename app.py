@@ -14,7 +14,6 @@ from calculations import (
     get_active_period, compute_period, get_period_status, get_tallied_per_user_product,
 )
 
-from auth import bp as auth_bp, admin_required
 from filters import euro, euro_cls
 from money import parse_cents, cents_input
 from forms import FormError, parse_date, parse_int
@@ -51,7 +50,6 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 12
 db.init_app(app)
 migrate = Migrate(app, db)
 csrf = CSRFProtect(app)
-app.register_blueprint(auth_bp)
 app.jinja_env.filters["euro"] = euro
 app.jinja_env.filters["euro_cls"] = euro_cls
 app.jinja_env.filters["cents_input"] = cents_input
@@ -238,7 +236,6 @@ def rapport(period_id=None):
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/admin")
-@admin_required
 def admin():
     period = get_active_period()
     users = User.query.order_by(User.sort_order, User.name).all()
@@ -251,7 +248,6 @@ def admin():
 
 # Bewoners
 @app.route("/admin/users", methods=["GET", "POST"])
-@admin_required
 def admin_users():
     period = get_active_period()
     if request.method == "POST":
@@ -304,7 +300,6 @@ def admin_users():
 
 # Producten
 @app.route("/admin/products", methods=["GET", "POST"])
-@admin_required
 def admin_products():
     if request.method == "POST":
         action = request.form.get("action")
@@ -357,7 +352,6 @@ def admin_products():
 
 # Periodes
 @app.route("/admin/periods", methods=["GET", "POST"])
-@admin_required
 def admin_periods():
     if request.method == "POST":
         action = request.form.get("action")
@@ -401,7 +395,6 @@ def admin_periods():
 
 
 @app.route("/admin/periods/close", methods=["GET", "POST"])
-@admin_required
 def admin_close_period():
     period = get_active_period()
     if not period or period.closed_at:
@@ -431,7 +424,6 @@ def admin_close_period():
 
 # Voorraad
 @app.route("/admin/inventory", methods=["GET", "POST"])
-@admin_required
 def admin_inventory():
     period = get_active_period()
     if not period:
@@ -526,7 +518,6 @@ def _money_page(tab, period, users, items, **extra):
 
 
 @app.route("/admin/payments", methods=["GET", "POST"])
-@admin_required
 def admin_payments():
     period = get_active_period()
     if not period:
@@ -560,7 +551,6 @@ def admin_payments():
 
 
 @app.route("/admin/corrections", methods=["GET", "POST"])
-@admin_required
 def admin_corrections():
     period = get_active_period()
     if not period:
@@ -598,7 +588,6 @@ def admin_corrections():
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/ho", methods=["GET", "POST"])
-@admin_required
 def ho():
     period = get_active_period()
     if not period:
