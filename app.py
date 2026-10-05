@@ -483,7 +483,11 @@ def admin_inventory():
             for key, val in request.form.items():
                 if key.startswith("qty_"):
                     product_id = int(key[4:])
-                    qty = parse_int(val, "Aantal", 0)
+                    if not val.strip():
+                        continue  # leeg = niet (opnieuw) geteld
+                    qty = parse_int(val, "Aantal")
+                    if qty < 0:
+                        raise FormError("Aantal mag niet negatief zijn.")
                     # Update or create snapshot
                     snap = InventorySnapshot.query.filter_by(
                         period_id=period.id, product_id=product_id, snapshot_type=snap_type
@@ -523,8 +527,11 @@ def admin_inventory():
 
         return redirect(url_for("admin_inventory"))
 
-    inventory = compute_period(period.id)["inventory"]
-    products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
+    ov = compute_period(period.id)
+    inventory = ov["inventory"]
+    used_ids = {r["product"].id for r in inventory}
+    products = [p for p in Product.query.filter_by(parent_product_id=None).order_by(Product.sort_order, Product.id)
+                if p.is_active or p.id in used_ids]
     purchases = InventoryPurchase.query.filter_by(period_id=period.id).order_by(InventoryPurchase.date.desc()).all()
 
     # Huidige snapshots
@@ -545,62 +552,57 @@ def admin_inventory():
         purchases=purchases,
         begin_snaps=begin_snaps,
         end_snaps=end_snaps,
+        complete=ov["inventory_complete"],
+        turfverlies=ov["turfverlies_total"],
     )
 
 
-# Betalingen
+# Betalingen en correcties (één pagina, twee tabbladen)
+def _money_page(tab, period, users, items, **extra):
+    return render_template("admin/money.html", tab=tab, period=period, users=users, items=items,
+                           today=date.today().isoformat(), **extra)
+
+
 @app.route("/admin/payments", methods=["GET", "POST"])
 @admin_required
 def admin_payments():
     period = get_active_period()
     if not period:
-        return render_template("admin/payments.html", period=None, payments=[], users=[])
+        return _money_page("payments", None, [], [], totals={})
 
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
             user_id = parse_int(request.form.get("user_id"), "Persoon")
             amount = parse_cents(request.form.get("amount"), "Bedrag")
+            if amount <= 0:
+                raise FormError("Bedrag: een overboeking moet groter zijn dan nul.")
             pay_date = parse_date(request.form.get("date"), "Datum")
-            notes = request.form.get("notes", "").strip()
-            payment = Payment(
-                period_id=period.id, user_id=user_id, amount_cents=amount,
-                date=pay_date, notes=notes
-            )
-            db.session.add(payment)
+            db.session.add(Payment(period_id=period.id, user_id=user_id, amount_cents=amount,
+                                   date=pay_date, notes=request.form.get("notes", "").strip()))
             db.session.commit()
+            flash("Overboeking toegevoegd.", "success")
         elif action == "delete":
             payment = db.session.get(Payment, parse_int(request.form.get("payment_id"), "Id"))
-            if payment:
+            if payment and payment.period_id == period.id:
                 db.session.delete(payment)
                 db.session.commit()
         return redirect(url_for("admin_payments"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
-    payments = (
-        Payment.query.filter_by(period_id=period.id)
-        .order_by(Payment.date.desc())
-        .all()
-    )
-    # Totaal per persoon
+    users = User.query.order_by(User.is_active.desc(), User.sort_order, User.name).all()  # ook vertrokken bewoners: die kunnen nog betalen
+    payments = Payment.query.filter_by(period_id=period.id).order_by(Payment.date.desc(), Payment.id.desc()).all()
     totals = {}
-    for u in users:
-        totals[u.id] = sum(p.amount_cents for p in payments if p.user_id == u.id)
-
-    return render_template(
-        "admin/payments.html",
-        period=period, payments=payments, users=users, totals=totals,
-        today=date.today().isoformat()
-    )
+    for p in payments:
+        totals[p.user_id] = totals.get(p.user_id, 0) + p.amount_cents
+    return _money_page("payments", period, users, payments, totals=totals)
 
 
-# Correcties
 @app.route("/admin/corrections", methods=["GET", "POST"])
 @admin_required
 def admin_corrections():
     period = get_active_period()
     if not period:
-        return render_template("admin/corrections.html", period=None, corrections=[], users=[])
+        return _money_page("corrections", None, [], [])
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -608,30 +610,25 @@ def admin_corrections():
             user_id = parse_int(request.form.get("user_id"), "Persoon")
             amount = parse_cents(request.form.get("amount"), "Bedrag")
             description = request.form.get("description", "").strip()
+            if amount == 0:
+                raise FormError("Bedrag: een correctie van nul heeft geen effect.")
+            if len(description) < 3:
+                raise FormError("Omschrijving: vul in waarom je corrigeert.")
             corr_date = parse_date(request.form.get("date"), "Datum")
-            corr = Correction(
-                period_id=period.id, user_id=user_id, amount_cents=amount,
-                description=description, date=corr_date
-            )
-            db.session.add(corr)
+            db.session.add(Correction(period_id=period.id, user_id=user_id, amount_cents=amount,
+                                      description=description, date=corr_date))
             db.session.commit()
+            flash("Correctie toegevoegd.", "success")
         elif action == "delete":
             corr = db.session.get(Correction, parse_int(request.form.get("correction_id"), "Id"))
-            if corr:
+            if corr and corr.period_id == period.id:
                 db.session.delete(corr)
                 db.session.commit()
         return redirect(url_for("admin_corrections"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
-    corrections = (
-        Correction.query.filter_by(period_id=period.id)
-        .order_by(Correction.date.desc())
-        .all()
-    )
-    return render_template(
-        "admin/corrections.html",
-        period=period, corrections=corrections, users=users
-    )
+    users = User.query.order_by(User.is_active.desc(), User.sort_order, User.name).all()
+    corrections = Correction.query.filter_by(period_id=period.id).order_by(Correction.date.desc(), Correction.id.desc()).all()
+    return _money_page("corrections", period, users, corrections)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -707,15 +704,10 @@ def ho():
 
         return redirect(url_for("ho"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
-    ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc()).all()
+    ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc(), HOEvent.id.desc()).all()
     ov = compute_period(period.id)
-    turfverlies = ov["turfverlies_total"]
-    inventory = ov["inventory"]
-
-    active_user_ids = [u.id for u in users if u.is_active]
-    ho_per_user = {r["user"].id: r["ho"] for r in ov["user_rows"]}
 
     return render_template(
         "ho.html",
@@ -723,11 +715,8 @@ def ho():
         ho_events=ho_events,
         users=users,
         products=products,
-        active_user_ids=active_user_ids,
-        turfverlies=turfverlies,
         overview=ov,
-        inventory=inventory,
-        ho_per_user=ho_per_user,
+        today=date.today().isoformat(),
     )
 
 

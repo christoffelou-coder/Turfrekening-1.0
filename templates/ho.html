@@ -1,280 +1,141 @@
 {% extends "base.html" %}
-{% block title %}HO Beheer{% endblock %}
+{% from "_macros.html" import head, csrf, no_period %}
+{% block title %}Gedeelde kosten (HO) · Turfrekening{% endblock %}
+{% block legacy_css %}{% endblock %}
 {% block content %}
-<div class="max-w-4xl mx-auto px-4 py-6">
-  <h1 class="text-2xl font-bold mb-2 text-amber-400">🏠 HO Beheer</h1>
-  <p class="text-gray-400 text-sm mb-6">Gedeelde kosten die niet individueel aangeslagen worden (feestjes, turfverlies, bankkosten, etc.)</p>
+<div class="page">
+  {{ head('Gedeelde kosten (HO)') }}
+  {% if not period %}{{ no_period() }}{% else %}
+  {% set ov = overview %}
+  <div class="stack">
 
-  {% if not period %}
-  <div class="bg-red-900/40 border border-red-700 rounded-xl p-4">Geen actieve periode.</div>
-  {% else %}
+    <section class="grid grid-3">
+      <div class="stat"><div class="label">Turfverlies {% if not ov.inventory_complete %}<span class="badge badge-accent">voorlopig</span>{% endif %}</div>
+        <div class="value">{{ ov.turfverlies_total|euro }}</div>
+        <div class="text-faint text-tiny">{% if ov.inventory_complete %}Gebruikt min geturfd{% else %}Wordt pas verdeeld na de eindtelling{% endif %}</div></div>
+      <div class="stat"><div class="label">Gedeelde posten</div><div class="value">{{ ov.ho_events_total|euro }}</div></div>
+      <div class="stat"><div class="label">Totaal te verdelen</div><div class="value">{{ ov.total_ho|euro }}</div></div>
+    </section>
 
-  <!-- Samenvatting -->
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-    <div class="bg-gray-800 border border-red-800/50 rounded-xl p-4">
-      <div class="text-sm text-gray-400 mb-1">Turfverlies</div>
-      <div class="text-2xl font-bold text-red-400">€{{ '%.2f'|format(turfverlies)|replace('.', ',') }}</div>
-      <div class="text-xs text-gray-500 mt-1">Voorraad gebruikt − geturfd</div>
-    </div>
-    <div class="bg-gray-800 border border-orange-800/50 rounded-xl p-4">
-      <div class="text-sm text-gray-400 mb-1">HO Events totaal</div>
-      <div class="text-2xl font-bold text-orange-400">€{{ '%.2f'|format(ho_events|sum(attribute='total_cost'))|replace('.', ',') }}</div>
-      <div class="text-xs text-gray-500 mt-1">{{ ho_events|length }} event(s)</div>
-    </div>
-    <div class="bg-gray-800 border border-amber-600/50 rounded-xl p-4">
-      <div class="text-sm text-gray-400 mb-1">Totaal HO p/p (gelijk)</div>
-      <div class="text-2xl font-bold text-amber-400">
-        €{{ '%.2f'|format((turfverlies + ho_events|sum(attribute='total_cost')) / [users|length, 1]|max)|replace('.', ',') }}
-      </div>
-      <div class="text-xs text-gray-500 mt-1">Over {{ users|length }} personen</div>
-    </div>
-  </div>
-
-  <!-- Turfverlies detail -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-    <h2 class="font-semibold mb-3">📦 Turfverlies per product</h2>
-    {% if inventory %}
-    <table class="w-full text-sm">
-      <thead><tr class="text-gray-400 text-xs border-b border-gray-700">
-        <th class="text-left py-1">Product</th>
-        <th class="text-right py-1">Gebruikt</th>
-        <th class="text-right py-1">Geturfd</th>
-        <th class="text-right py-1 text-blue-400">HO-events</th>
-        <th class="text-right py-1">Verlies (st)</th>
-        <th class="text-right py-1">Verlies (€)</th>
-      </tr></thead>
-      <tbody>
-        {% for row in inventory %}
-        {% if row.turfverlies_qty != 0 or row.ho_qty > 0 %}
-        <tr class="border-b border-gray-700/50">
-          <td class="py-1.5">{{ row.product.emoji }} {{ row.product.name }}</td>
-          <td class="py-1.5 text-right text-gray-400">{{ row.gebruikt }}</td>
-          <td class="py-1.5 text-right text-amber-400">{{ row.geturfd }}</td>
-          <td class="py-1.5 text-right text-blue-400">{{ row.ho_qty if row.ho_qty > 0 else '—' }}</td>
-          <td class="py-1.5 text-right {% if row.turfverlies_qty < 0 %}text-green-400{% else %}text-red-400{% endif %}">
-            {{ row.turfverlies_qty }}
-          </td>
-          <td class="py-1.5 text-right font-semibold {% if row.turfverlies_eur < 0 %}text-green-400{% else %}text-red-400{% endif %}">
-            {% if row.turfverlies_eur < 0 %}+{% endif %}€{{ '%.2f'|format(row.turfverlies_eur|abs)|replace('.', ',') }}
-          </td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-      </tbody>
-      <tfoot><tr class="border-t border-gray-600">
-        <td colspan="4" class="py-2 font-semibold {% if turfverlies < 0 %}text-green-400{% else %}text-red-400{% endif %}">
-          Totaal turfverlies
-        </td>
-        <td class="py-2 text-right font-bold {% if turfverlies < 0 %}text-green-400{% else %}text-red-400{% endif %}">
-          {% if turfverlies < 0 %}+{% endif %}€{{ '%.2f'|format(turfverlies|abs)|replace('.', ',') }}
-        </td>
-      </tr></tfoot>
-    </table>
-    {% else %}
-    <p class="text-gray-500 text-sm">Nog geen voorraadgegevens. <a href="/admin/inventory" class="text-amber-400 underline">Voeg voorraad toe.</a></p>
-    {% endif %}
-  </div>
-
-  <!-- HO Event toevoegen -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-    <h2 class="font-semibold mb-3">+ Nieuw HO-event</h2>
-    <form method="POST" id="hoForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="add_event" />
-
-      <!-- Basisvelden -->
-      <div class="flex flex-wrap gap-3 mb-3 items-end">
-        <div>
-          <label class="block text-xs text-gray-400 mb-1">Omschrijving</label>
-          <input name="name" required placeholder="Bijv. Scholierenborrel" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-52" />
+    <section class="card">
+      <h2>Nieuwe post</h2>
+      <form method="POST" id="hoForm" class="stack">{{ csrf() }}
+        <input type="hidden" name="action" value="add_event">
+        <div class="form-row">
+          <label class="field" style="flex:1; min-width:200px"><span>Omschrijving</span><input name="name" required placeholder="Bijv. Scholierenborrel" class="input"></label>
+          <label class="field"><span>Datum</span><input name="date" type="date" required value="{{ today }}" class="input"></label>
+          <label class="field"><span>Verdeling</span>
+            <select name="distribution_type" id="distType" class="input">
+              <option value="equal_all">Gelijk over iedereen</option>
+              <option value="equal_selected" selected>Gelijk over selectie</option>
+              <option value="manual">Handmatig per persoon</option>
+            </select></label>
+          <label class="field" style="flex:1; min-width:160px"><span>Notitie (optioneel)</span><input name="notes" class="input"></label>
         </div>
-        <div>
-          <label class="block text-xs text-gray-400 mb-1">Datum</label>
-          <input name="date" type="date" required class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-400 mb-1">Verdeling</label>
-          <select name="distribution_type" id="distType" onchange="updateDistUI()"
-            class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
-            <option value="equal_all">Gelijk over iedereen</option>
-            <option value="equal_selected" selected>Gelijk over selectie</option>
-            <option value="manual">Handmatig per persoon</option>
-          </select>
-        </div>
-        <div class="flex-1 min-w-40">
-          <label class="block text-xs text-gray-400 mb-1">Notitie (optioneel)</label>
-          <input name="notes" placeholder="Notitie" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-full" />
-        </div>
-      </div>
 
-      <!-- Kosten sectie -->
-      <div class="bg-gray-700/40 rounded-xl p-4 mb-3 border border-gray-600">
-        <p class="text-xs text-gray-400 mb-3 font-semibold uppercase tracking-wide">Kosten</p>
-        <div class="flex flex-wrap gap-3 items-end">
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Vaste kosten (€)</label>
-            <input name="total_cost" id="baseCost" type="number" step="0.01" min="0" value="0" placeholder="0.00"
-              class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-28"
-              oninput="updateTotalCost()" />
+        <div class="card-inset">
+          <div class="form-row">
+            <label class="field"><span>Vaste kosten (€)</span><input name="total_cost" id="baseCost" type="number" step="0.01" min="0" value="0" class="input" style="width:120px"></label>
+            <label class="field"><span>Gedronken bieren</span><input name="beer_quantity" id="beerQty" type="number" min="0" step="1" class="input" style="width:110px"></label>
+            <label class="field"><span>Product</span>
+              <select name="beer_product_id" id="beerProduct" class="input"><option value="">— geen —</option>
+                {% for p in products %}<option value="{{ p.id }}" data-price="{{ p.price_cents }}">{{ p.emoji }} {{ p.name }} ({{ p.price_cents|euro }})</option>{% endfor %}</select></label>
+            <div class="field"><span>Totale kosten</span><div id="totalCostDisplay" class="strong" style="min-height:var(--control-h); display:flex; align-items:center;">€0,00</div></div>
           </div>
-          <div class="text-gray-500 text-sm self-center pb-1">+</div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Gedronken bieren</label>
-            <input name="beer_quantity" id="beerQty" type="number" min="0" step="1" placeholder="0"
-              class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-24"
-              oninput="updateTotalCost()" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Product</label>
-            <select name="beer_product_id" id="beerProduct" onchange="updateTotalCost()"
-              class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
-              <option value="">— geen —</option>
-              {% for p in products %}
-              <option value="{{ p.id }}" data-price="{{ p.price }}">{{ p.emoji }} {{ p.name }} (€{{ '%.2f'|format(p.price)|replace('.', ',') }})</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="self-center pb-1">
-            <span class="text-gray-400 text-sm">=</span>
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Totale kosten</label>
-            <div id="totalCostDisplay" class="bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-amber-400 font-bold text-sm w-28">€0,00</div>
+          <p class="text-faint text-tiny" id="beerCostInfo" style="margin:var(--space-2) 0 0"></p>
+        </div>
+
+        <div id="shareSection" class="card-inset">
+          <p class="text-muted text-small" id="shareHint" style="margin-top:0"></p>
+          <div class="checkbox-grid">
+            {% for user in users %}
+            <div class="check">
+              <input type="checkbox" name="select_{{ user.id }}" id="sel-{{ user.id }}" class="share-check" {% if user.participates_in_ho %}checked{% endif %}>
+              <label for="sel-{{ user.id }}" style="flex:1; cursor:pointer;">{{ user.name }}{% if not user.participates_in_ho %} <span class="text-faint text-tiny">(geen HO)</span>{% endif %}</label>
+              <input type="number" name="share_{{ user.id }}" step="0.01" min="0" placeholder="0,00" class="input share-amount hidden">
+            </div>
+            {% endfor %}
           </div>
         </div>
-        <p class="text-xs text-gray-500 mt-2" id="beerCostInfo"></p>
-      </div>
+        <div><button class="btn btn-primary">Post toevoegen</button></div>
+      </form>
+    </section>
 
-      <!-- Deelnemers (zichtbaar bij equal_selected of manual) -->
-      <div id="shareSection" class="bg-gray-700/50 rounded-xl p-4 mb-3 border border-gray-600">
-        <p class="text-sm text-gray-400 mb-3" id="shareHint"></p>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {% for user in users %}
-          <div class="flex items-center gap-2 rounded-lg p-2 {% if user.participates_in_ho %}bg-gray-700{% else %}bg-gray-800{% endif %}">
-            <input type="checkbox" name="select_{{ user.id }}" id="sel-{{ user.id }}"
-              class="share-check rounded" {% if user.participates_in_ho %}checked{% endif %} />
-            <label for="sel-{{ user.id }}" class="text-sm flex-1 cursor-pointer">
-              {{ user.name }}{% if not user.participates_in_ho %} <span class="text-xs text-gray-500">(geen HO)</span>{% endif %}
-            </label>
-            <input type="number" name="share_{{ user.id }}" step="0.01" min="0" placeholder="0.00"
-              class="share-amount bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm w-20 hidden" />
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg font-semibold text-sm btn-press">
-        + Event toevoegen
-      </button>
-    </form>
-  </div>
-
-  <!-- Bestaande HO events -->
-  {% if ho_events %}
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-    <h2 class="font-semibold mb-3">HO Events deze periode</h2>
-    <div class="space-y-3">
-      {% for event in ho_events %}
-      <div class="bg-gray-700/50 rounded-xl p-4">
-        <div class="flex items-start justify-between">
-          <div class="flex-1">
-            <div class="font-semibold">{{ event.name }}</div>
-            <div class="text-sm text-gray-400 mt-0.5">
+    <section class="card">
+      <h2>Posten deze periode</h2>
+      {% if ho_events %}
+        {% for event in ho_events %}
+        <div class="list-item">
+          <div class="grow">
+            <div class="strong">{{ event.name }}</div>
+            <div class="text-muted text-small">
               {{ event.date.strftime('%d-%m-%Y') }} ·
-              <span class="text-amber-400 font-semibold">€{{ '%.2f'|format(event.total_cost)|replace('.', ',') }}</span> ·
-              {% if event.distribution_type == 'equal_all' %}Gelijk over iedereen
-              {% elif event.distribution_type == 'equal_selected' %}Gelijk over selectie
-              {% else %}Handmatig{% endif %}
+              {% if event.distribution_type == 'equal_all' %}Gelijk over iedereen{% elif event.distribution_type == 'equal_selected' %}Gelijk over selectie{% else %}Handmatig{% endif %}
+              {% if event.beer_quantity and event.beer_product %} · {{ event.beer_quantity }} × {{ event.beer_product.name }} ({{ (event.beer_quantity * event.beer_product.price_cents)|euro }}){% endif %}
+              {% if event.notes %} · {{ event.notes }}{% endif %}
             </div>
-            {% if event.beer_quantity and event.beer_product %}
-            <div class="text-xs text-blue-400 mt-1">
-              🍺 {{ event.beer_quantity }} × {{ event.beer_product.name }}
-              (€{{ '%.2f'|format(event.beer_quantity * event.beer_product.price)|replace('.', ',') }})
-            </div>
-            {% endif %}
-            {% if event.notes %}<div class="text-xs text-gray-500 mt-1">{{ event.notes }}</div>{% endif %}
-            {% if event.shares %}
-            <div class="text-xs text-gray-400 mt-1">
-              Deelnemers: {% for share in event.shares %}{{ share.user.name }}{% if not loop.last %}, {% endif %}{% endfor %}
-            </div>
-            {% endif %}
+            {% if event.shares %}<div class="text-faint text-tiny">Deelnemers: {% for share in event.shares %}{{ share.user.name }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
           </div>
-          <form method="POST" class="inline ml-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="action" value="delete_event" />
-            <input type="hidden" name="event_id" value="{{ event.id }}" />
-            <button class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded bg-gray-600 hover:bg-gray-500">✕ Verwijder</button>
-          </form>
+          <div class="num strong">{{ event.total_cost_cents|euro }}</div>
+          <form method="POST" onsubmit="return confirm('Deze post verwijderen?')">{{ csrf() }}
+            <input type="hidden" name="action" value="delete_event"><input type="hidden" name="event_id" value="{{ event.id }}">
+            <button class="btn btn-danger btn-small">Verwijderen</button></form>
         </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
+        {% endfor %}
+      {% else %}
+      <div class="empty"><p>Nog geen gedeelde kosten in deze periode.</p></div>
+      {% endif %}
+    </section>
 
-  <!-- HO aandeel per persoon -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
-    <h2 class="font-semibold mb-3">HO aandeel per persoon (huidige periode)</h2>
-    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      {% for user in users %}
-      <div class="bg-gray-700/50 rounded-lg p-3">
-        <div class="text-sm font-semibold">{{ user.name }}</div>
-        <div class="text-amber-400 font-bold">€{{ '%.2f'|format(ho_per_user.get(user.id, 0))|replace('.', ',') }}</div>
-      </div>
-      {% endfor %}
-    </div>
+    <section class="card">
+      <h2>HO per persoon</h2>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Naam</th><th class="num">Turfverlies</th><th class="num">Posten</th><th class="num">Totaal</th></tr></thead>
+        <tbody>{% for r in ov.user_rows %}
+          <tr><td class="strong">{{ r.user.name }}</td><td class="num">{{ r.ho_turfverlies|euro }}</td><td class="num">{{ r.ho_events|euro }}</td><td class="num">{{ r.ho|euro }}</td></tr>
+        {% endfor %}</tbody>
+        <tfoot><tr><td>Totaal</td><td class="num">{{ ov.turfverlies_distributed|euro }}</td><td class="num">{{ ov.ho_events_total|euro }}</td><td class="num">{{ ov.total_ho|euro }}</td></tr></tfoot>
+      </table></div>
+    </section>
   </div>
-
   {% endif %}
 </div>
 
 <script>
-function updateTotalCost() {
-  const base = parseFloat(document.getElementById('baseCost').value) || 0;
-  const qty = parseInt(document.getElementById('beerQty').value) || 0;
-  const sel = document.getElementById('beerProduct');
-  const opt = sel.options[sel.selectedIndex];
-  const price = opt && opt.dataset.price ? parseFloat(opt.dataset.price) : 0;
-  const beerCost = qty * price;
-  const total = base + beerCost;
+(function () {
+  const $ = id => document.getElementById(id);
+  const euro = c => '€' + (c / 100).toFixed(2).replace('.', ',');
+  if (!$('hoForm')) return;
 
-  document.getElementById('totalCostDisplay').textContent = '€' + total.toFixed(2).replace('.', ',');
-
-  const info = document.getElementById('beerCostInfo');
-  if (qty > 0 && price > 0) {
-    info.textContent = qty + ' bieren × €' + price.toFixed(2).replace('.', ',') + ' = €' + beerCost.toFixed(2).replace('.', ',');
-  } else {
-    info.textContent = '';
+  function updateTotalCost() {
+    const base = Math.round((parseFloat($('baseCost').value) || 0) * 100);
+    const qty = parseInt($('beerQty').value, 10) || 0;
+    const opt = $('beerProduct').options[$('beerProduct').selectedIndex];
+    const price = opt && opt.dataset.price ? parseInt(opt.dataset.price, 10) : 0;
+    $('totalCostDisplay').textContent = euro(base + qty * price);
+    $('beerCostInfo').textContent = qty > 0 && price > 0 ? qty + ' bieren × ' + euro(price) + ' = ' + euro(qty * price) : '';
   }
-}
 
-function updateDistUI() {
-  const type = document.getElementById('distType').value;
-  const section = document.getElementById('shareSection');
-  const hint = document.getElementById('shareHint');
-  const checks = document.querySelectorAll('.share-check');
-  const amounts = document.querySelectorAll('.share-amount');
-
-  if (type === 'equal_all') {
-    section.classList.add('hidden');
-  } else if (type === 'equal_selected') {
-    section.classList.remove('hidden');
-    hint.textContent = 'Vink aan wie deelnemen. Actieve leden zijn standaard aangevinkt.';
-    checks.forEach(c => {
-      c.type = 'checkbox';
-      c.parentElement.classList.remove('hidden');
-    });
-    amounts.forEach(a => a.classList.add('hidden'));
-  } else {
-    section.classList.remove('hidden');
-    hint.textContent = 'Vul per persoon het exacte bedrag in (laat leeg voor 0).';
-    checks.forEach(c => {
-      c.parentElement.classList.remove('hidden');
-      c.type = 'hidden';
-    });
-    amounts.forEach(a => a.classList.remove('hidden'));
+  function updateDistUI() {
+    const type = $('distType').value;
+    const checks = document.querySelectorAll('.share-check');
+    const amounts = document.querySelectorAll('.share-amount');
+    $('shareSection').classList.toggle('hidden', type === 'equal_all');
+    if (type === 'equal_selected') {
+      $('shareHint').textContent = 'Vink aan wie deelnemen. Bewoners die aan HO meedoen staan standaard aan.';
+      checks.forEach(c => c.classList.remove('hidden'));
+      amounts.forEach(a => a.classList.add('hidden'));
+    } else if (type === 'manual') {
+      $('shareHint').textContent = 'Vul per persoon het exacte bedrag in (leeg = €0).';
+      checks.forEach(c => c.classList.add('hidden'));
+      amounts.forEach(a => a.classList.remove('hidden'));
+    }
   }
-}
 
-updateDistUI();
-updateTotalCost();
+  ['baseCost', 'beerQty'].forEach(id => $(id).addEventListener('input', updateTotalCost));
+  $('beerProduct').addEventListener('change', updateTotalCost);
+  $('distType').addEventListener('change', updateDistUI);
+  updateDistUI(); updateTotalCost();
+})();
 </script>
 {% endblock %}

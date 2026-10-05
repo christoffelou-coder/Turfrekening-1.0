@@ -50,6 +50,7 @@ class Product(db.Model):
     # Als dit product meerdere eenheden van een ander product telt (bijv. halve krat = 12 pils)
     parent_product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True)
     parent_units = db.Column(db.Integer, default=1)
+    parent_product = db.relationship("Product", remote_side=[id], foreign_keys=[parent_product_id])
 
     tallies = db.relationship("Tally", backref="product", lazy=True)
     inventory_purchases = db.relationship("InventoryPurchase", backref="product", lazy=True)
