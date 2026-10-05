@@ -23,11 +23,42 @@ from periods import (PeriodError, check_period_dates, close_blockers, close_peri
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+SOUNDS_DIR = os.path.join(BASE_DIR, "static", "sounds")
+SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a")
+
+
+def _slug(text):
+    return "-".join((text or "").strip().lower().replace("_", " ").split())
+
+
+def available_sounds():
+    """{naam: bestandsnaam} van de geluiden in static/sounds, bv. {'kakelende-kip': 'kakelende-kip.mp3'}."""
+    try:
+        files = sorted(os.listdir(SOUNDS_DIR))
+    except OSError:
+        return {}
+    return {os.path.splitext(f)[0]: f for f in files if f.lower().endswith(SOUND_EXTENSIONS)}
+
+
+def sound_src(value):
+    """Wat het turfscherm afspeelt: 'piep', een volledige link, of /static/sounds/<bestand>."""
+    value = (value or "").strip()
+    if not value or value == "piep" or value.startswith(("http://", "https://", "/static/")):
+        return value
+    filename = available_sounds().get(_slug(value))
+    return f"/static/sounds/{filename}" if filename else ""
+
+
 def parse_sound(raw_url, raw_every):
-    """Geluid-link en interval. Toegestaan: 'piep', een http(s)-link of een pad onder /static/."""
+    """Geluid: 'piep', de naam van een geluid in static/sounds (bv. 'kakelende kip'),
+    een https-link of een pad onder /static/."""
     url = (raw_url or "").strip()
-    if url and url != "piep" and not (url.startswith(("http://", "https://")) or url.startswith("/static/")):
-        raise FormError("Geluid-link: gebruik een https-link, een pad als /static/sounds/ei.mp3, of het woord piep.")
+    if url and url != "piep" and not url.startswith(("http://", "https://", "/static/")):
+        name = _slug(url)
+        if name not in available_sounds():
+            namen = ", ".join(["piep"] + list(available_sounds())) 
+            raise FormError(f"Geluid-link: '{url}' is niet bekend. Kies uit: {namen}, of gebruik een https-link naar een mp3.")
+        url = name
     every = parse_int(raw_every, "Geluid elke … stuks", 3)
     if every < 1 or every > 100:
         raise FormError("Geluid elke … stuks: kies een getal tussen 1 en 100.")
@@ -68,6 +99,7 @@ csrf = CSRFProtect(app)
 app.jinja_env.filters["euro"] = euro
 app.jinja_env.filters["euro_cls"] = euro_cls
 app.jinja_env.filters["cents_input"] = cents_input
+app.jinja_env.filters["sound_src"] = sound_src
 
 
 @app.context_processor
@@ -395,7 +427,7 @@ def admin_products():
         return redirect(url_for("admin_products"))
 
     products = Product.query.order_by(Product.sort_order).all()
-    return render_template("admin/products.html", products=products)
+    return render_template("admin/products.html", products=products, sounds=list(available_sounds()))
 
 
 # Periodes

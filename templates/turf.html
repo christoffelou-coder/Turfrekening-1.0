@@ -27,7 +27,7 @@
     <p class="turf-label" id="hint">Wat pak je?</p>
     <div class="product-row scroller" id="products">
       {% for product in products %}
-      <button type="button" class="product-btn" data-id="{{ product.id }}" data-name="{{ product.name }}"{% if product.sound_url %} data-sound="{{ product.sound_url }}" data-every="{{ product.sound_every or 3 }}"{% endif %}>
+      <button type="button" class="product-btn" data-id="{{ product.id }}" data-name="{{ product.name }}"{% set src = product.sound_url|sound_src %}{% if src %} data-sound="{{ src }}" data-every="{{ product.sound_every or 3 }}"{% endif %}>
         {% if product.image_url %}<img class="pimg" src="{{ product.image_url }}" alt="">{% else %}<span class="emoji">{{ product.emoji }}</span>{% endif %}
         <span class="name">{{ product.name }}</span>
       </button>

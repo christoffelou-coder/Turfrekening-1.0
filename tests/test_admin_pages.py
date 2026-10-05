@@ -106,3 +106,19 @@ def test_product_geluid_opslaan_en_valideren(admin, basis):
     # leeg = geen geluid
     admin.post("/admin/products", data={**base, "name": "Stil", "sound_url": "", "sound_every": "3"})
     assert Product.query.filter_by(name="Stil").one().sound_url is None
+
+
+def test_geluid_op_naam_uit_static_sounds(admin, basis):
+    base = {"action": "add", "name": "Kip", "price": "1", "emoji": "🐔", "sort_order": "9", "sound_every": "3"}
+    # spaties/hoofdletters worden genormaliseerd naar de bestandsnaam
+    admin.post("/admin/products", data={**base, "sound_url": "Kakelende Kip"})
+    kip = Product.query.filter_by(name="Kip").one()
+    assert kip.sound_url == "kakelende-kip"
+    html = admin.get("/").get_data(as_text=True)
+    assert 'data-sound="/static/sounds/kakelende-kip.mp3"' in html
+    # onbekende naam wordt geweigerd
+    admin.post("/admin/products", data={**base, "name": "Fout", "sound_url": "bestaat-niet"})
+    assert Product.query.filter_by(name="Fout").count() == 0
+    # het bestand wordt echt geserveerd
+    r = admin.get("/static/sounds/kakelende-kip.mp3")
+    assert r.status_code == 200 and r.mimetype in ("audio/mpeg", "audio/mp3")

@@ -2,6 +2,7 @@
 {% from "_macros.html" import head, csrf %}
 {% block title %}Producten en prijzen · Turfrekening{% endblock %}
 {% block content %}
+<datalist id="geluiden"><option value="piep">{% for s in sounds %}<option value="{{ s }}">{% endfor %}</datalist>
 <div class="page">
   {{ head('Producten en prijzen') }}
   <div class="stack">
@@ -19,11 +20,11 @@
             {% for p in products if not p.parent_product_id %}<option value="{{ p.id }}">{{ p.emoji }} {{ p.name }}</option>{% endfor %}</select></label>
         <label class="field"><span>Aantal eenheden</span><input name="parent_units" type="number" min="1" value="1" class="input" style="width:90px"></label>
         <label class="field" style="flex:1"><span>Afbeelding-URL (optioneel)</span><input name="image_url" class="input" placeholder="https://…"></label>
-        <label class="field" style="flex:1"><span>Geluid-link (optioneel)</span><input name="sound_url" class="input" placeholder="piep  of  https://…/geluid.mp3"></label>
+        <label class="field" style="flex:1"><span>Geluid-link (optioneel)</span><input name="sound_url" class="input" placeholder="piep  of  kakelende-kip" list="geluiden"></label>
         <label class="field"><span>Geluid elke … stuks</span><input name="sound_every" type="number" min="1" max="100" value="3" class="input" style="width:110px"></label>
         <button class="btn btn-primary">Toevoegen</button>
       </form>
-      <p class="text-muted text-small" style="margin-bottom:0">Een halve krat telt voor de voorraad als 12 pils: kies "Telt mee als" Pils met 12 eenheden. Geluid: vul het woord <strong>piep</strong> in voor het ingebouwde geluidje, of een link naar een mp3 (bijvoorbeeld <code>/static/sounds/ei.mp3</code> als het bestand in het project staat). Het speelt bij elke N-de stuk van dat product per persoon; laat het veld leeg voor geen geluid. Een prijswijziging geldt vanaf nu; turfjes die al geturfd zijn houden hun oude prijs.</p>
+      <p class="text-muted text-small" style="margin-bottom:0">Een halve krat telt voor de voorraad als 12 pils: kies "Telt mee als" Pils met 12 eenheden. Geluid: vul het woord <strong>piep</strong> in voor het ingebouwde geluidje, of de naam van een geluid uit het project{% if sounds %} (nu: <strong>{{ sounds|join(', ') }}</strong>){% endif %}, of een https-link naar een mp3. Het speelt bij elke N-de stuk van dat product per persoon; laat het veld leeg voor geen geluid. Een prijswijziging geldt vanaf nu; turfjes die al geturfd zijn houden hun oude prijs.</p>
     </section>
 
     <section class="card">
@@ -53,7 +54,7 @@
                 {% for p in products if p.id != product.id and not p.parent_product_id %}<option value="{{ p.id }}" {% if product.parent_product_id == p.id %}selected{% endif %}>{{ p.emoji }} {{ p.name }}</option>{% endfor %}</select></label>
             <label class="field"><span>Aantal eenheden</span><input name="parent_units" type="number" min="1" value="{{ product.parent_units or 1 }}" class="input" style="width:90px"></label>
             <label class="field" style="flex:1"><span>Afbeelding-URL</span><input name="image_url" value="{{ product.image_url or '' }}" class="input"></label>
-            <label class="field" style="flex:1"><span>Geluid-link</span><input name="sound_url" value="{{ product.sound_url or '' }}" class="input" placeholder="piep  of  https://…/geluid.mp3"></label>
+            <label class="field" style="flex:1"><span>Geluid-link</span><input name="sound_url" value="{{ product.sound_url or '' }}" class="input" placeholder="piep  of  kakelende-kip" list="geluiden"></label>
             <label class="field"><span>Geluid elke … stuks</span><input name="sound_every" type="number" min="1" max="100" value="{{ product.sound_every or 3 }}" class="input" style="width:110px"></label>
             <label class="check"><input type="checkbox" name="is_active" {% if product.is_active %}checked{% endif %}> Actief</label>
             <button class="btn btn-primary">Opslaan</button>
