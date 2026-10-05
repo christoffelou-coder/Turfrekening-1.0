@@ -1,125 +1,67 @@
 {% extends "base.html" %}
-{% block title %}Producten{% endblock %}
+{% from "_macros.html" import head, csrf %}
+{% block title %}Producten en prijzen · Turfrekening{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto px-4 py-6">
-  <div class="flex items-center gap-3 mb-6">
-    <a href="/admin" class="text-gray-400 hover:text-white">← Admin</a>
-    <h1 class="text-2xl font-bold text-amber-400">📦 Producten</h1>
-  </div>
+<div class="page">
+  {{ head('Producten en prijzen') }}
+  <div class="stack">
 
-  <!-- Nieuw product -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-    <h2 class="font-semibold mb-3">Nieuw product</h2>
-    <form method="POST" class="flex flex-wrap gap-3 items-end">
-      <input type="hidden" name="action" value="add" />
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Naam</label>
-        <input name="name" required placeholder="Bier" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-28" />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Prijs (€)</label>
-        <input name="price" type="number" step="0.01" min="0" required placeholder="0.68" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-24" />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Emoji</label>
-        <input name="emoji" placeholder="🍺" value="🍺" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16 text-center" />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Afbeelding URL</label>
-        <input name="image_url" placeholder="https://..." class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-48" />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
-        <input name="sort_order" type="number" value="{{ products|length }}" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Koppel aan product</label>
-        <select name="parent_product_id" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-36">
-          <option value="">— geen —</option>
-          {% for p in products %}
-          <option value="{{ p.id }}">{{ p.emoji }} {{ p.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs text-gray-400 mb-1">Aantal eenheden</label>
-        <input name="parent_units" type="number" min="1" value="1" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm w-16" />
-      </div>
-      <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg font-semibold text-sm btn-press">
-        + Toevoegen
-      </button>
-    </form>
-  </div>
+    <section class="card">
+      <h2>Nieuw product</h2>
+      <form method="POST" class="form-row">{{ csrf() }}
+        <input type="hidden" name="action" value="add">
+        <label class="field"><span>Naam</span><input name="name" required class="input" style="width:140px"></label>
+        <label class="field"><span>Prijs (€)</span><input name="price" type="number" step="0.01" min="0" required class="input" style="width:100px"></label>
+        <label class="field"><span>Emoji</span><input name="emoji" value="🍺" class="input" style="width:70px; text-align:center"></label>
+        <label class="field"><span>Volgorde</span><input name="sort_order" type="number" value="{{ products|length + 1 }}" class="input" style="width:80px"></label>
+        <label class="field"><span>Telt mee als (optioneel)</span>
+          <select name="parent_product_id" class="input"><option value="">— niets —</option>
+            {% for p in products if not p.parent_product_id %}<option value="{{ p.id }}">{{ p.emoji }} {{ p.name }}</option>{% endfor %}</select></label>
+        <label class="field"><span>Aantal eenheden</span><input name="parent_units" type="number" min="1" value="1" class="input" style="width:90px"></label>
+        <label class="field" style="flex:1"><span>Afbeelding-URL (optioneel)</span><input name="image_url" class="input" placeholder="https://…"></label>
+        <button class="btn btn-primary">Toevoegen</button>
+      </form>
+      <p class="text-muted text-small" style="margin-bottom:0">Een halve krat telt voor de voorraad als 12 pils: kies "Telt mee als" Pils met 12 eenheden. Een prijswijziging geldt vanaf nu; turfjes die al geturfd zijn houden hun oude prijs.</p>
+    </section>
 
-  <!-- Standaard producten hint -->
-  <div class="bg-gray-800/50 border border-gray-700 rounded-xl p-3 mb-4 text-sm text-gray-400">
-    💡 Standaard producten: Bier (🍺 €0,68), Blikje (🥤 €0,85), Flesje (🍾 €0,82), Pakjes (📦 €0,68), Ei (🥚 €0,30), Stelz (🍸 €10,00)
-  </div>
-
-  <!-- Productenlijst -->
-  <div class="space-y-3">
-    {% for product in products %}
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
-      <div class="w-10 h-10 flex items-center justify-center text-3xl">
-        {% if product.image_url %}
-        <img src="{{ product.image_url }}" alt="{{ product.name }}" class="w-12 h-12 object-contain rounded-lg" />
-        {% else %}{{ product.emoji }}{% endif %}
-      </div>
-      <div class="flex-1">
-        <div class="font-semibold flex items-center gap-2">
-          {{ product.name }}
-          <span class="text-amber-400 text-sm">€{{ '%.2f'|format(product.price)|replace('.', ',') }}</span>
-          {% if not product.is_active %}<span class="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full">inactief</span>{% endif %}
+    <section class="card">
+      <h2>Producten</h2>
+      {% for product in products %}
+      <div class="list-item">
+        <div style="font-size:28px; width:40px; text-align:center;">
+          {% if product.image_url %}<img src="{{ product.image_url }}" alt="" style="width:36px;height:36px;object-fit:contain;border-radius:6px">{% else %}{{ product.emoji }}{% endif %}
         </div>
-        <div class="text-xs text-gray-500">Volgorde: {{ product.sort_order }}</div>
+        <div class="grow">
+          <div class="strong">{{ product.name }}
+            {% if not product.is_active %}<span class="badge">inactief</span>{% endif %}
+            {% if product.parent_product_id %}<span class="badge">telt als {{ product.parent_units }}× {{ product.parent_product.name }}</span>{% endif %}
+          </div>
+          <div class="text-muted text-small">{{ product.price_cents|euro }} · volgorde {{ product.sort_order }}</div>
+        </div>
+        <details class="edit" style="flex-basis:100%; order:3;">
+          <summary class="btn btn-small" style="width:max-content">Bewerken</summary>
+          <form method="POST" class="form-row card-inset">{{ csrf() }}
+            <input type="hidden" name="action" value="edit"><input type="hidden" name="product_id" value="{{ product.id }}">
+            <label class="field"><span>Naam</span><input name="name" value="{{ product.name }}" class="input" style="width:140px"></label>
+            <label class="field"><span>Prijs (€)</span><input name="price" type="number" step="0.01" min="0" value="{{ product.price_cents|cents_input }}" class="input" style="width:100px"></label>
+            <label class="field"><span>Emoji</span><input name="emoji" value="{{ product.emoji }}" class="input" style="width:70px; text-align:center"></label>
+            <label class="field"><span>Volgorde</span><input name="sort_order" type="number" value="{{ product.sort_order }}" class="input" style="width:80px"></label>
+            <label class="field"><span>Telt mee als</span>
+              <select name="parent_product_id" class="input"><option value="">— niets —</option>
+                {% for p in products if p.id != product.id and not p.parent_product_id %}<option value="{{ p.id }}" {% if product.parent_product_id == p.id %}selected{% endif %}>{{ p.emoji }} {{ p.name }}</option>{% endfor %}</select></label>
+            <label class="field"><span>Aantal eenheden</span><input name="parent_units" type="number" min="1" value="{{ product.parent_units or 1 }}" class="input" style="width:90px"></label>
+            <label class="field" style="flex:1"><span>Afbeelding-URL</span><input name="image_url" value="{{ product.image_url or '' }}" class="input"></label>
+            <label class="check"><input type="checkbox" name="is_active" {% if product.is_active %}checked{% endif %}> Actief</label>
+            <button class="btn btn-primary">Opslaan</button>
+          </form>
+          <form method="POST" style="margin-top:var(--space-2)" onsubmit="return confirm('{{ product.name }} verwijderen? Dat lukt alleen als er nog niets mee is gedaan.')">{{ csrf() }}
+            <input type="hidden" name="action" value="delete"><input type="hidden" name="product_id" value="{{ product.id }}">
+            <button class="btn btn-danger btn-small">Verwijderen</button>
+          </form>
+        </details>
       </div>
-      <details class="text-sm">
-        <summary class="cursor-pointer text-gray-400 hover:text-white px-3 py-1 bg-gray-700 rounded-lg">Bewerken</summary>
-        <form method="POST" class="mt-2 flex flex-wrap gap-2 items-end bg-gray-700 p-3 rounded-lg">
-          <input type="hidden" name="action" value="edit" />
-          <input type="hidden" name="product_id" value="{{ product.id }}" />
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Naam</label>
-            <input name="name" value="{{ product.name }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-24" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Prijs</label>
-            <input name="price" type="number" step="0.01" value="{{ product.price }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-20" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Emoji</label>
-            <input name="emoji" value="{{ product.emoji }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14 text-center" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Afbeelding URL</label>
-            <input name="image_url" value="{{ product.image_url or '' }}" placeholder="https://..." class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-48" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Volgorde</label>
-            <input name="sort_order" type="number" value="{{ product.sort_order }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Koppel aan product</label>
-            <select name="parent_product_id" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-32">
-              <option value="">— geen —</option>
-              {% for p in products %}
-              <option value="{{ p.id }}" {% if product.parent_product_id == p.id %}selected{% endif %}>{{ p.emoji }} {{ p.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Aantal eenheden</label>
-            <input name="parent_units" type="number" min="1" value="{{ product.parent_units or 1 }}" class="bg-gray-600 border border-gray-500 rounded-lg px-2 py-1 text-white text-sm w-14" />
-          </div>
-          <div class="flex items-center gap-1">
-            <input type="checkbox" name="is_active" id="pa-{{ product.id }}" {% if product.is_active %}checked{% endif %} />
-            <label for="pa-{{ product.id }}" class="text-xs text-gray-300">Actief</label>
-          </div>
-          <button type="submit" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-semibold">Opslaan</button>
-        </form>
-      </details>
-    </div>
-    {% endfor %}
+      {% endfor %}
+    </section>
   </div>
 </div>
 {% endblock %}

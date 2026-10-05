@@ -1,0 +1,10 @@
+{% macro head(title, back='/admin', back_label='Admin') -%}
+<a href="{{ back }}" class="back no-print">← {{ back_label }}</a>
+<div class="page-head"><h1>{{ title }}</h1></div>
+{%- endmacro %}
+
+{% macro csrf() -%}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{%- endmacro %}
+
+{% macro no_period() -%}
+<div class="card empty"><p>Er is geen actieve periode.</p><a href="/admin/periods" class="btn btn-primary">Periode aanmaken</a></div>
+{%- endmacro %}

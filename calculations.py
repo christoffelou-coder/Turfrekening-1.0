@@ -1,23 +1,45 @@
 """
 Berekeningslogica voor de turfrekening.
-Alle financiële berekeningen zitten hier centraal.
+
+Eén rekenpad: compute_period(period_id) levert alles wat rapport, admin en
+dashboard nodig hebben. Alle bedragen zijn hele centen (int).
+
+Stand = beginstand + overgemaakt − geturfd − HO + correctie
 """
+from datetime import date
+
+from sqlalchemy import func
+
 from models import (
     db, Period, User, Product, Tally, InventoryPurchase,
     InventorySnapshot, HOEvent, HOEventShare, Payment, Correction,
-    PeriodStartBalance
+    PeriodStartBalance,
 )
-from sqlalchemy import func
+from money import split_even
+
+
+def _user_dict(u):
+    return {"id": u.id, "name": u.name, "is_active": bool(u.is_active)}
+
+
+def _product_dict(p):
+    return {"id": p.id, "name": p.name, "emoji": p.emoji, "price_cents": p.price_cents,
+            "is_active": bool(p.is_active), "image_url": p.image_url}
+
+
+def _period_dict(p):
+    return {"id": p.id, "name": p.name, "start_date": p.start_date, "end_date": p.end_date,
+            "is_active": bool(p.is_active), "closed_at": p.closed_at}
 
 
 def get_active_period():
     return Period.query.filter_by(is_active=True).order_by(Period.id.desc()).first()
 
 
-# ─── Turfjes per persoon ────────────────────────────────────────────────────
+# ─── Turfjes ─────────────────────────────────────────────────────────────────
 
 def get_tallied_per_user_product(period_id):
-    """Returns dict: {user_id: {product_id: quantity}}"""
+    """{user_id: {product_id: quantity}}"""
     rows = (
         db.session.query(Tally.user_id, Tally.product_id, func.sum(Tally.quantity))
         .filter(Tally.period_id == period_id)
@@ -30,20 +52,9 @@ def get_tallied_per_user_product(period_id):
     return result
 
 
-def get_geturfd_cost(period_id, user_id):
-    """Totale kosten van turfjes voor een persoon in een periode."""
-    rows = (
-        db.session.query(func.sum(Tally.quantity * Product.price))
-        .join(Product, Tally.product_id == Product.id)
-        .filter(Tally.period_id == period_id, Tally.user_id == user_id)
-        .scalar()
-    )
-    return rows or 0.0
-
-
 def get_total_tallied_per_product(period_id):
-    """Returns dict: {product_id: total_quantity_tallied}.
-    Producten met parent_product_id tellen mee als parent_units × aantal bij het parent product."""
+    """{product_id: totaal geturfd}. Een child-product (halve krat) telt mee als
+    parent_units × aantal bij het parent-product."""
     rows = (
         db.session.query(Tally.product_id, func.sum(Tally.quantity))
         .filter(Tally.period_id == period_id)
@@ -51,375 +62,240 @@ def get_total_tallied_per_product(period_id):
         .all()
     )
     result = {pid: qty for pid, qty in rows}
-
-    # Voeg child product tallies toe aan parent product
-    child_products = Product.query.filter(Product.parent_product_id.isnot(None)).all()
-    for child in child_products:
+    for child in Product.query.filter(Product.parent_product_id.isnot(None)).all():
         child_qty = result.get(child.id, 0)
-        if child_qty > 0:
-            units = child.parent_units or 1
-            result[child.parent_product_id] = result.get(child.parent_product_id, 0) + child_qty * units
-
+        if child_qty:
+            result[child.parent_product_id] = (
+                result.get(child.parent_product_id, 0) + child_qty * (child.parent_units or 1)
+            )
     return result
 
 
-# ─── Voorraad ───────────────────────────────────────────────────────────────
+# ─── Hoofdberekening ─────────────────────────────────────────────────────────
 
-def get_inventory_data(period_id):
-    """
-    Berekent per product:
-      - stock_begin, bijstock, stock_eind
-      - gebruikt (= begin + bij - eind)
-      - geturfd
-      - turfverlies_qty (= gebruikt - geturfd), kan negatief zijn (dan geen verlies)
-      - turfverlies_eur
-    Returns list of dicts.
-    """
-    # Alleen standalone producten — child-producten tellen mee bij hun parent
-    products = Product.query.filter_by(is_active=True, parent_product_id=None).all()
+def _sum_by_user(model, column, period_id):
+    rows = (
+        db.session.query(model.user_id, func.sum(column))
+        .filter(model.period_id == period_id)
+        .group_by(model.user_id)
+        .all()
+    )
+    return {uid: int(total or 0) for uid, total in rows}
+
+
+def _inventory(period_id):
+    """Voorraadregels per standalone product dat in deze periode iets te maken heeft.
+    Zonder eindtelling is een regel 'niet geteld' en telt hij niet mee als turfverlies."""
+    begin = {s.product_id: s.quantity for s in
+             InventorySnapshot.query.filter_by(period_id=period_id, snapshot_type="begin")}
+    end = {s.product_id: s.quantity for s in
+           InventorySnapshot.query.filter_by(period_id=period_id, snapshot_type="end")}
+    bought = {pid: int(q or 0) for pid, q in
+              db.session.query(InventoryPurchase.product_id, func.sum(InventoryPurchase.quantity))
+              .filter(InventoryPurchase.period_id == period_id)
+              .group_by(InventoryPurchase.product_id)}
     tallied = get_total_tallied_per_product(period_id)
 
-    # Bieren gedronken bij HO-events tellen niet als turfverlies
     ho_beers = {}
     for ev in HOEvent.query.filter_by(period_id=period_id).filter(
         HOEvent.beer_product_id.isnot(None), HOEvent.beer_quantity.isnot(None)
-    ).all():
+    ):
         ho_beers[ev.beer_product_id] = ho_beers.get(ev.beer_product_id, 0) + ev.beer_quantity
 
-    result = []
+    relevant = set(begin) | set(end) | set(bought) | set(tallied)
+    products = (
+        Product.query.filter(Product.parent_product_id.is_(None), Product.id.in_(relevant))
+        .order_by(Product.sort_order, Product.id).all()
+        if relevant else []
+    )
+
+    rows = []
     for p in products:
-        begin_snap = InventorySnapshot.query.filter_by(
-            period_id=period_id, product_id=p.id, snapshot_type="begin"
-        ).first()
-        end_snap = InventorySnapshot.query.filter_by(
-            period_id=period_id, product_id=p.id, snapshot_type="end"
-        ).first()
-
-        bijstock = (
-            db.session.query(func.sum(InventoryPurchase.quantity))
-            .filter_by(period_id=period_id, product_id=p.id)
-            .scalar() or 0
-        )
-
-        stock_begin = begin_snap.quantity if begin_snap else 0
-        stock_eind = end_snap.quantity if end_snap else 0
-        gebruikt = stock_begin + bijstock - stock_eind
+        counted = p.id in end
+        stock_begin = begin.get(p.id, 0)
+        bijstock = bought.get(p.id, 0)
         geturfd = tallied.get(p.id, 0)
         ho_qty = ho_beers.get(p.id, 0)
-        verlies_qty = gebruikt - geturfd - ho_qty  # negatief = te veel geturfd (credit)
-        verlies_eur = verlies_qty * p.price
-
-        result.append({
-            "product": p,
+        if counted:
+            gebruikt = stock_begin + bijstock - end[p.id]
+            verlies_qty = gebruikt - geturfd - ho_qty  # negatief = meer geturfd dan gebruikt
+            verlies_cents = verlies_qty * p.price_cents
+        else:
+            gebruikt = verlies_qty = None
+            verlies_cents = 0
+        rows.append({
+            "product": _product_dict(p),
+            "counted": counted,
             "stock_begin": stock_begin,
             "bijstock": bijstock,
-            "stock_eind": stock_eind,
+            "stock_eind": end.get(p.id),
             "gebruikt": gebruikt,
             "geturfd": geturfd,
             "ho_qty": ho_qty,
             "turfverlies_qty": verlies_qty,
-            "turfverlies_eur": verlies_eur,
+            "turfverlies_cents": verlies_cents,
         })
-    return result
+    return rows
 
 
-def get_total_turfverlies(period_id):
-    """Totaal turfverlies in euro's voor een periode."""
-    inv = get_inventory_data(period_id)
-    return sum(row["turfverlies_eur"] for row in inv)
+def compute_period(period_id):
+    period = db.session.get(Period, period_id)
+    all_users = User.query.order_by(User.sort_order, User.name).all()
+    is_open = bool(period.is_active)
 
-
-# ─── HO berekening ──────────────────────────────────────────────────────────
-
-def get_ho_events_total(period_id):
-    """Totale kosten van HO-events (excl. turfverlies)."""
-    total = (
-        db.session.query(func.sum(HOEvent.total_cost))
-        .filter_by(period_id=period_id)
-        .scalar()
-    )
-    return total or 0.0
-
-
-def get_ho_share_for_user(period_id, user_id):
-    """
-    Berekent het HO-aandeel voor een specifieke gebruiker in een periode.
-
-    Logica:
-    - Turfverlies en equal_all events worden verdeeld over gebruikers met participates_in_ho=True
-    - equal_selected: gelijk over de geselecteerde deelnemers (HOEventShare records)
-    - manual: exact het bedrag uit HOEventShare
-    - Gebruikers met participates_in_ho=False doen niet mee aan turfverlies/equal_all,
-      maar kunnen nog wel aan equal_selected/manual events deelnemen
-    """
-    ho_users = User.query.filter_by(participates_in_ho=True).all()
-    ho_user_ids = {u.id for u in ho_users}
-    n_ho = len(ho_users)
-
-    if n_ho == 0:
-        return 0.0
-
-    total = 0.0
-
-    # 1. Turfverlies gelijk verdeeld over HO-deelnemers
-    if user_id in ho_user_ids:
-        turfverlies = get_total_turfverlies(period_id)
-        total += turfverlies / n_ho
-
-    # 2. HO events
-    events = HOEvent.query.filter_by(period_id=period_id).all()
-    for event in events:
-        if event.distribution_type == "equal_all":
-            if user_id in ho_user_ids:
-                total += event.total_cost / n_ho
-
-        elif event.distribution_type == "equal_selected":
-            shares = HOEventShare.query.filter_by(ho_event_id=event.id).all()
-            participant_ids = {s.user_id for s in shares}
-            if user_id in participant_ids:
-                n_participants = len(participant_ids)
-                total += event.total_cost / n_participants if n_participants > 0 else 0
-
-        elif event.distribution_type == "manual":
-            share = HOEventShare.query.filter_by(
-                ho_event_id=event.id, user_id=user_id
-            ).first()
-            if share:
-                total += share.amount
-
-    return total
-
-
-def get_total_ho_per_person(period_id):
-    """Totale HO-kosten gedeeld door actief aantal personen (voor overzicht)."""
-    active_count = User.query.filter_by(is_active=True).count()
-    if active_count == 0:
-        return 0.0
-    turfverlies = get_total_turfverlies(period_id)
-    events_total = get_ho_events_total(period_id)
-    # equal_all events only in this simplified total
-    return (turfverlies + events_total) / active_count
-
-
-# ─── Betalingen & correcties ────────────────────────────────────────────────
-
-def get_payments_total(period_id, user_id):
-    total = (
-        db.session.query(func.sum(Payment.amount))
-        .filter_by(period_id=period_id, user_id=user_id)
-        .scalar()
-    )
-    return total or 0.0
-
-
-def get_corrections_total(period_id, user_id):
-    total = (
-        db.session.query(func.sum(Correction.amount))
-        .filter_by(period_id=period_id, user_id=user_id)
-        .scalar()
-    )
-    return total or 0.0
-
-
-# ─── Stand per persoon ──────────────────────────────────────────────────────
-
-def get_stand(user, period_id):
-    """
-    Berekent de huidige stand voor een gebruiker.
-    Stand = Vorige Stand + Overgemaakt − Geturfd − HO + Correctie
-    """
-    overgemaakt = get_payments_total(period_id, user.id)
-    geturfd = get_geturfd_cost(period_id, user.id)
-    ho = get_ho_share_for_user(period_id, user.id)
-    correctie = get_corrections_total(period_id, user.id)
-    return user.previous_balance + overgemaakt - geturfd - ho + correctie
-
-
-def get_stands_bulk(period_id, users):
-    """Berekent eindstand voor alle gebruikers in bulk — geen N+1 queries."""
-    payment_rows = (
-        db.session.query(Payment.user_id, func.sum(Payment.amount))
-        .filter_by(period_id=period_id).group_by(Payment.user_id).all()
-    )
-    payments_by_user = {uid: amt for uid, amt in payment_rows}
-
-    geturfd_rows = (
-        db.session.query(Tally.user_id, func.sum(Tally.quantity * Product.price))
-        .join(Product, Tally.product_id == Product.id)
+    # ── Ruwe gegevens, allemaal in bulk ──
+    tally_rows = (
+        db.session.query(Tally.user_id, func.sum(Tally.quantity * Tally.unit_price_cents))
         .filter(Tally.period_id == period_id).group_by(Tally.user_id).all()
     )
-    geturfd_by_user = {uid: amt for uid, amt in geturfd_rows}
+    geturfd_by_user = {uid: int(c or 0) for uid, c in tally_rows}
+    tally_map = get_tallied_per_user_product(period_id)
+    paid_by_user = _sum_by_user(Payment, Payment.amount_cents, period_id)
+    corr_by_user = _sum_by_user(Correction, Correction.amount_cents, period_id)
+    start_by_user = {s.user_id: s.balance_cents for s in
+                     PeriodStartBalance.query.filter_by(period_id=period_id)}
 
-    correction_rows = (
-        db.session.query(Correction.user_id, func.sum(Correction.amount))
-        .filter_by(period_id=period_id).group_by(Correction.user_id).all()
-    )
-    corrections_by_user = {uid: amt for uid, amt in correction_rows}
+    events = HOEvent.query.filter_by(period_id=period_id).order_by(HOEvent.date, HOEvent.id).all()
+    shares_by_event = {}
+    if events:
+        for s in HOEventShare.query.filter(HOEventShare.ho_event_id.in_([e.id for e in events])):
+            shares_by_event.setdefault(s.ho_event_id, []).append(s)
+    share_user_ids = {s.user_id for lst in shares_by_event.values() for s in lst}
 
-    turfverlies = get_total_turfverlies(period_id)
-    ho_shares = get_ho_shares_bulk(period_id, users, turfverlies)
+    # ── Wie doet mee in deze periode ──
+    activity = set(geturfd_by_user) | set(tally_map) | set(paid_by_user) | set(corr_by_user)
+    present = activity | set(start_by_user) | share_user_ids
+    users = [u for u in all_users if u.id in present or (is_open and u.is_active)]
+    user_ids = [u.id for u in users]
 
-    snapshots = PeriodStartBalance.query.filter_by(period_id=period_id).all()
-    start_balance = {s.user_id: s.balance for s in snapshots}
+    # ── Voorraad en turfverlies ──
+    inventory = _inventory(period_id)
+    inventory_complete = bool(inventory) and all(r["counted"] for r in inventory)
+    turfverlies_total = sum(r["turfverlies_cents"] for r in inventory)
+    # Zonder volledige eindtelling is turfverlies voorlopig en wordt het niet verdeeld.
+    turfverlies_distributed = turfverlies_total if inventory_complete else 0
+
+    # ── HO verdelen (exact in centen) ──
+    warnings = []
+    participants = [u.id for u in users if u.participates_in_ho]
+    ho_turf = {uid: 0 for uid in user_ids}
+    ho_events_by_user = {uid: 0 for uid in user_ids}
+    if participants:
+        for uid, c in zip(participants, split_even(turfverlies_distributed, len(participants))):
+            ho_turf[uid] += c
+    elif turfverlies_distributed:
+        warnings.append({"code": "no_ho_participants", "message": "Niemand doet mee aan HO: turfverlies is niet verdeeld."})
+
+    ho_events_total = 0
+    for ev in events:
+        shares = shares_by_event.get(ev.id, [])
+        if ev.distribution_type == "equal_all":
+            targets = participants
+        elif ev.distribution_type == "equal_selected":
+            chosen = {s.user_id for s in shares}
+            targets = [uid for uid in user_ids if uid in chosen]
+        else:  # manual
+            targets = None
+
+        if targets is None:
+            for s in shares:
+                if s.user_id in ho_events_by_user:
+                    ho_events_by_user[s.user_id] += s.amount_cents
+            ho_events_total += sum(s.amount_cents for s in shares)
+            if sum(s.amount_cents for s in shares) != ev.total_cost_cents:
+                warnings.append({"code": "manual_mismatch",
+                                 "message": f"HO-post '{ev.name}': handmatige bedragen tellen niet op tot het totaal."})
+        elif targets:
+            for uid, c in zip(targets, split_even(ev.total_cost_cents, len(targets))):
+                ho_events_by_user[uid] += c
+            ho_events_total += ev.total_cost_cents
+        else:
+            warnings.append({"code": "event_no_targets",
+                             "message": f"HO-post '{ev.name}' heeft niemand om over te verdelen."})
+
+    # ── Rijen per persoon ──
+    user_rows = []
     for u in users:
-        if u.id not in start_balance:
-            start_balance[u.id] = u.previous_balance
+        begin = start_by_user.get(u.id, 0)           # geen beginstand = 0, nooit een terugval
+        paid = paid_by_user.get(u.id, 0)
+        geturfd = geturfd_by_user.get(u.id, 0)
+        ho = ho_turf[u.id] + ho_events_by_user[u.id]
+        corr = corr_by_user.get(u.id, 0)
+        user_rows.append({
+            "user": _user_dict(u),
+            "vorige_stand": begin,
+            "overgemaakt": paid,
+            "geturfd": geturfd,
+            "ho": ho,
+            "ho_turfverlies": ho_turf[u.id],
+            "ho_events": ho_events_by_user[u.id],
+            "correctie": corr,
+            "stand": begin + paid - geturfd - ho + corr,
+            "tallies_per_product": tally_map.get(u.id, {}),
+        })
+        if u.id not in activity:
+            warnings.append({"code": "no_activity", "message": f"{u.name} heeft geen activiteit in deze periode."})
+
+    ho_values = [r["ho"] for r in user_rows]
+    ho_uniform = bool(ho_values) and max(ho_values) - min(ho_values) <= 1  # ≤ 1 cent door afronding
+
+    if inventory and not inventory_complete:
+        missing = ", ".join(r["product"]["name"] for r in inventory if not r["counted"])
+        warnings.append({"code": "inventory_incomplete", "message": f"Eindtelling ontbreekt voor: {missing}."})
+    if inventory_complete and turfverlies_total < 0:
+        warnings.append({"code": "negative_turfverlies", "message": "Negatief turfverlies: er is meer geturfd dan gebruikt."})
+    if period.end_date and period.end_date > date.today():
+        warnings.append({"code": "end_in_future", "message": "De einddatum ligt in de toekomst."})
+
+    # Producten die in het rapport als kolom staan: actief, of met turfjes in deze periode
+    tallied_product_ids = {pid for per_user in tally_map.values() for pid in per_user}
+    report_products = [_product_dict(p) for p in Product.query.order_by(Product.sort_order, Product.id)
+                       if p.is_active or p.id in tallied_product_ids]
+
+    beer_names = {p.id: p for p in Product.query.filter(Product.id.in_([e.beer_product_id for e in events if e.beer_product_id]))} if events else {}
+    event_dicts = [{
+        "id": e.id, "name": e.name, "date": e.date, "notes": e.notes,
+        "total_cost_cents": e.total_cost_cents, "distribution_type": e.distribution_type,
+        "beer_quantity": e.beer_quantity,
+        "beer_product_name": beer_names[e.beer_product_id].name if e.beer_product_id in beer_names else None,
+        "beer_cost_cents": (e.beer_quantity or 0) * beer_names[e.beer_product_id].price_cents if e.beer_product_id in beer_names else 0,
+    } for e in events]
 
     return {
-        u.id: round(
-            start_balance[u.id]
-            + payments_by_user.get(u.id, 0.0)
-            - geturfd_by_user.get(u.id, 0.0)
-            - ho_shares.get(u.id, 0.0)
-            + corrections_by_user.get(u.id, 0.0),
-            2
-        )
-        for u in users
+        "period": _period_dict(period),
+        "users": [_user_dict(u) for u in users],
+        "products": report_products,
+        "user_rows": user_rows,
+        "inventory": inventory,
+        "inventory_complete": inventory_complete,
+        "turfverlies_total": turfverlies_total,
+        "turfverlies_distributed": turfverlies_distributed,
+        "ho_events": event_dicts,
+        "ho_events_total": ho_events_total,
+        "total_ho": turfverlies_distributed + ho_events_total,
+        "ho_uniform": ho_uniform,
+        "ho_per_person": user_rows[0]["ho"] if ho_uniform else None,
+        "active_count": len(users),
+        "warnings": warnings,
+        "totals": {
+            "geturfd": sum(r["geturfd"] for r in user_rows),
+            "overgemaakt": sum(r["overgemaakt"] for r in user_rows),
+            "ho": sum(r["ho"] for r in user_rows),
+            "correctie": sum(r["correctie"] for r in user_rows),
+            "vorige_stand": sum(r["vorige_stand"] for r in user_rows),
+            "stand": sum(r["stand"] for r in user_rows),
+        },
     }
 
 
-# ─── Volledig overzicht ──────────────────────────────────────────────────────
+# ─── Dashboard-status ────────────────────────────────────────────────────────
 
-def get_ho_shares_bulk(period_id, users, turfverlies_total):
-    """Berekent HO-aandeel voor alle gebruikers in één keer (geen N+1)."""
-    ho_user_ids = {u.id for u in users if u.participates_in_ho}
-    n_ho = len(ho_user_ids)
-    shares = {u.id: 0.0 for u in users}
-
-    if n_ho == 0:
-        return shares
-
-    # Turfverlies gelijk over HO-deelnemers
-    turfverlies_share = turfverlies_total / n_ho
-    for uid in ho_user_ids:
-        shares[uid] += turfverlies_share
-
-    # HO events — alle shares in één query ophalen
-    events = HOEvent.query.filter_by(period_id=period_id).all()
-    if not events:
-        return shares
-
-    event_ids = [e.id for e in events]
-    all_shares = HOEventShare.query.filter(HOEventShare.ho_event_id.in_(event_ids)).all()
-    shares_by_event = {}
-    for s in all_shares:
-        shares_by_event.setdefault(s.ho_event_id, []).append(s)
-
-    for event in events:
-        if event.distribution_type == "equal_all":
-            per_person = event.total_cost / n_ho
-            for uid in ho_user_ids:
-                shares[uid] += per_person
-
-        elif event.distribution_type == "equal_selected":
-            event_shares = shares_by_event.get(event.id, [])
-            participant_ids = {s.user_id for s in event_shares}
-            n = len(participant_ids)
-            if n > 0:
-                per_person = event.total_cost / n
-                for uid in participant_ids:
-                    if uid in shares:
-                        shares[uid] += per_person
-
-        elif event.distribution_type == "manual":
-            for s in shares_by_event.get(event.id, []):
-                if s.user_id in shares:
-                    shares[s.user_id] += s.amount
-
-    return shares
-
-
-def get_period_overview(period_id):
-    """
-    Genereert het volledige maandoverzicht voor een periode.
-    Alles wordt in bulk opgehaald — geen N+1 queries.
-    """
-    period = Period.query.get(period_id)
-    users = User.query.order_by(User.sort_order, User.name).all()
-    products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
-
-    # ── Bulk queries ──────────────────────────────────────────────────────────
-
-    # Betalingen per gebruiker
-    payment_rows = (
-        db.session.query(Payment.user_id, func.sum(Payment.amount))
-        .filter_by(period_id=period_id)
-        .group_by(Payment.user_id).all()
-    )
-    payments_by_user = {uid: amt for uid, amt in payment_rows}
-
-    # Geturfd bedrag per gebruiker
-    geturfd_rows = (
-        db.session.query(Tally.user_id, func.sum(Tally.quantity * Product.price))
-        .join(Product, Tally.product_id == Product.id)
-        .filter(Tally.period_id == period_id)
-        .group_by(Tally.user_id).all()
-    )
-    geturfd_by_user = {uid: amt for uid, amt in geturfd_rows}
-
-    # Correcties per gebruiker
-    correction_rows = (
-        db.session.query(Correction.user_id, func.sum(Correction.amount))
-        .filter_by(period_id=period_id)
-        .group_by(Correction.user_id).all()
-    )
-    corrections_by_user = {uid: amt for uid, amt in correction_rows}
-
-    # Turfjes per gebruiker per product
-    tally_map = get_tallied_per_user_product(period_id)
-
-    # Voorraad + turfverlies (één keer)
-    inventory = get_inventory_data(period_id)
-    turfverlies_total = sum(r["turfverlies_eur"] for r in inventory)
-
-    # HO shares in bulk
-    ho_shares = get_ho_shares_bulk(period_id, users, turfverlies_total)
-
-    # Beginstand uit snapshot (zodat oude rapporten niet veranderen na nieuwe periode)
-    snapshots = PeriodStartBalance.query.filter_by(period_id=period_id).all()
-    start_balance = {s.user_id: s.balance for s in snapshots}
-    # Geen snapshot → gebruik huidige previous_balance (actieve periode of eerste periode)
-    for u in users:
-        if u.id not in start_balance:
-            start_balance[u.id] = u.previous_balance
-
-    # ── Per-persoon rijen samenstellen ────────────────────────────────────────
-    user_rows = []
-    for u in users:
-        overgemaakt = payments_by_user.get(u.id, 0.0)
-        geturfd = geturfd_by_user.get(u.id, 0.0)
-        ho = ho_shares.get(u.id, 0.0)
-        correctie = corrections_by_user.get(u.id, 0.0)
-        vorige = start_balance[u.id]
-        stand = vorige + overgemaakt - geturfd - ho + correctie
-
-        user_rows.append({
-            "user": u,
-            "vorige_stand": vorige,
-            "overgemaakt": overgemaakt,
-            "geturfd": geturfd,
-            "ho": ho,
-            "correctie": correctie,
-            "stand": stand,
-            "tallies_per_product": tally_map.get(u.id, {}),
-        })
-
-    ho_events = HOEvent.query.filter_by(period_id=period_id).all()
-    ho_events_total = sum(e.total_cost for e in ho_events)
-    total_ho = turfverlies_total + ho_events_total
-    active_count = len(users)
-    ho_per_person = total_ho / active_count if active_count > 0 else 0
-
+def get_period_status(period, overview=None):
+    ov = overview or compute_period(period.id)
     return {
-        "period": period,
-        "users": users,
-        "products": products,
-        "user_rows": user_rows,
-        "inventory": inventory,
-        "turfverlies_total": turfverlies_total,
-        "ho_events": ho_events,
-        "ho_events_total": ho_events_total,
-        "total_ho": total_ho,
-        "ho_per_person": ho_per_person,
-        "active_count": active_count,
+        "days": max((date.today() - period.start_date).days, 0),
+        "geturfd": ov["totals"]["geturfd"],
+        "betaald": ov["totals"]["overgemaakt"],
+        "ho_events": len(ov["ho_events"]),
+        "inventory_done": ov["inventory_complete"],
     }

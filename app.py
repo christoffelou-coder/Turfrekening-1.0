@@ -1,9 +1,9 @@
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
-from datetime import date, datetime
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy.exc import IntegrityError
+from flask_migrate import Migrate
 
 load_dotenv()
 from models import (
@@ -11,22 +11,16 @@ from models import (
     InventorySnapshot, HOEvent, HOEventShare, Payment, Correction
 )
 from calculations import (
-    get_active_period, get_stand, get_geturfd_cost, get_payments_total,
-    get_corrections_total, get_ho_share_for_user, get_period_overview,
-    get_inventory_data, get_total_turfverlies, get_tallied_per_user_product,
-    get_ho_shares_bulk, get_stands_bulk
+    get_active_period, compute_period, get_period_status,
 )
 
-from models import PeriodStartBalance
+from filters import euro, euro_cls
+from money import parse_cents, cents_input
+from forms import FormError, parse_date, parse_int
+from periods import (PeriodError, check_period_dates, close_blockers, close_period, create_first_period,
+                     default_next_name, get_period_view, has_data)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-def save_period_start_balances(period_id, users):
-    """Sla de huidige previous_balance op als beginstand-snapshot voor deze periode."""
-    PeriodStartBalance.query.filter_by(period_id=period_id).delete()
-    for u in users:
-        db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance=u.previous_balance))
 
 
 app = Flask(__name__)
@@ -35,7 +29,8 @@ app = Flask(__name__)
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
     # Railway/Supabase geeft soms 'postgres://' maar SQLAlchemy wil 'postgresql://'
-    database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+    # Forceer de psycopg2-driver (anders pakt SQLAlchemy een andere geïnstalleerde driver)
     if database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 else:
@@ -43,42 +38,55 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 280}
-app.secret_key = os.environ.get("SECRET_KEY", "turfrekening-secret-2024")
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 280}  # Supabase-pooler sluit idle verbindingen
+_secret = os.environ.get("SECRET_KEY")
+if not _secret:
+    if os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development":
+        _secret = "alleen-lokaal-ontwikkelen"
+    else:
+        raise RuntimeError("SECRET_KEY ontbreekt. Zet die als omgevingsvariabele (alleen lokaal mag FLASK_DEBUG=1).")
+app.secret_key = _secret
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("DATABASE_URL"))
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 12
 
 db.init_app(app)
+migrate = Migrate(app, db)
+csrf = CSRFProtect(app)
+app.jinja_env.filters["euro"] = euro
+app.jinja_env.filters["euro_cls"] = euro_cls
+app.jinja_env.filters["cents_input"] = cents_input
 
 
-# ─── Init DB ─────────────────────────────────────────────────────────────────
+@app.context_processor
+def _globals():
+    css = os.path.join(BASE_DIR, "static", "css", "app.css")
+    try:
+        version = int(os.path.getmtime(css))
+    except OSError:
+        version = 0
+    return {"css_version": version}
 
-@app.cli.command("init-db")
-def init_db():
-    db.create_all()
-    print("Database aangemaakt.")
+
+@app.errorhandler(PeriodError)
+def _period_error(err):
+    flash(str(err), "error")
+    return redirect(request.referrer or url_for("admin_periods"))
 
 
-def create_tables():
-    with app.app_context():
-        db.create_all()
-        from sqlalchemy import text
-        try:
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT"))
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id INTEGER REFERENCES products(id)"))
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_units INTEGER DEFAULT 1"))
-            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_product_id INTEGER REFERENCES products(id)"))
-            db.session.execute(text("ALTER TABLE ho_events ADD COLUMN IF NOT EXISTS beer_quantity INTEGER"))
-            db.session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS participates_in_ho BOOLEAN DEFAULT TRUE"))
-            db.session.execute(text("""
-                CREATE TABLE IF NOT EXISTS period_start_balances (
-                    id SERIAL PRIMARY KEY,
-                    period_id INTEGER REFERENCES periods(id) ON DELETE CASCADE,
-                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                    balance FLOAT NOT NULL
-                )
-            """))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+@app.errorhandler(FormError)
+def _form_error(err):
+    flash(str(err), "error")
+    return redirect(request.referrer or url_for("admin"))
+
+
+@app.errorhandler(CSRFError)
+def _csrf_error(err):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Sessie verlopen, ververs de pagina."}), 400
+    flash("Sessie verlopen, probeer het opnieuw.", "error")
+    return redirect(request.referrer or url_for("index"))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -88,7 +96,7 @@ def create_tables():
 @app.route("/")
 def index():
     period = get_active_period()
-    users = User.query.order_by(User.sort_order, User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
 
     # Saldo wordt niet meer getoond op het turfscherm (verwarrend zolang
@@ -106,30 +114,66 @@ def index():
 
 @app.route("/api/tally", methods=["POST"])
 def add_tally():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Ongeldige aanvraag"}), 400
     period = get_active_period()
     if not period:
         return jsonify({"error": "Geen actieve periode"}), 400
 
+    try:
+        user_id = int(data["user_id"])
+        product_id = int(data["product_id"])
+        quantity = int(data.get("quantity", 1))
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Ongeldige aanvraag"}), 400
+    # Negatief = een turfje terugdraaien (min-knop op het turfscherm)
+    if quantity == 0 or abs(quantity) > 24:
+        return jsonify({"error": "Aantal moet tussen 1 en 24 liggen"}), 400
+
+    user = db.session.get(User, user_id)
+    product = db.session.get(Product, product_id)
+    if not user or not product:
+        return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
+    if not user.is_active or not product.is_active:
+        return jsonify({"error": "Gebruiker of product is niet actief"}), 400
+
     tally = Tally(
         period_id=period.id,
-        user_id=int(data["user_id"]),
-        product_id=int(data["product_id"]),
-        quantity=data.get("quantity", 1),
+        user_id=user.id,
+        product_id=product.id,
+        quantity=quantity,
+        unit_price_cents=product.price_cents,
     )
     db.session.add(tally)
-    try:
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        return jsonify({"error": "Gebruiker of product niet gevonden"}), 404
+    db.session.commit()
 
-    return jsonify({"ok": True, "tally_id": tally.id})
+    return jsonify({
+        "ok": True,
+        "tally_id": tally.id,
+        "user": user.name,
+        "product": product.name,
+        "quantity": tally.quantity,
+    })
+
+
+UNDO_WINDOW = timedelta(minutes=10)
+
+
+def _is_undoable(tally):
+    """Alleen turfjes uit de actieve periode, en niet langer dan UNDO_WINDOW geleden."""
+    period = get_active_period()
+    return bool(
+        period and tally.period_id == period.id
+        and datetime.utcnow() - tally.created_at <= UNDO_WINDOW
+    )
 
 
 @app.route("/api/tally/<int:tally_id>", methods=["DELETE"])
 def undo_tally(tally_id):
-    tally = Tally.query.get_or_404(tally_id)
+    tally = db.get_or_404(Tally, tally_id)
+    if not _is_undoable(tally):
+        return jsonify({"error": "Te lang geleden om ongedaan te maken. Gebruik een correctie."}), 403
     db.session.delete(tally)
     db.session.commit()
     return jsonify({"ok": True})
@@ -137,13 +181,13 @@ def undo_tally(tally_id):
 
 @app.route("/api/last-tally")
 def last_tally():
-    """Geeft het meest recente turfje terug (voor undo-knop)."""
+    """Geeft het meest recente turfje terug (voor de ongedaan-maken-balk)."""
     period = get_active_period()
     if not period:
         return jsonify({"tally": None})
     tally = (
         Tally.query.filter_by(period_id=period.id)
-        .order_by(Tally.created_at.desc())
+        .order_by(Tally.created_at.desc(), Tally.id.desc())
         .first()
     )
     if not tally:
@@ -154,7 +198,8 @@ def last_tally():
             "user": tally.user.name,
             "product": tally.product.name,
             "quantity": tally.quantity,
-            "created_at": tally.created_at.strftime("%H:%M"),
+            "created_at": tally.created_at.isoformat() + "Z",
+            "undoable": _is_undoable(tally),
         }
     })
 
@@ -174,30 +219,16 @@ def product_counts(product_id):
     return jsonify({str(uid): int(total or 0) for uid, total in rows})
 
 
-@app.route("/api/balance/<int:user_id>")
-def get_balance(user_id):
-    user = User.query.get_or_404(user_id)
-    period = get_active_period()
-    if not period:
-        return jsonify({"stand": user.previous_balance})
-    stand = get_stand(user, period.id)
-    return jsonify({"stand": round(stand, 2)})
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# RAPPORT — maandoverzicht
-# ════════════════════════════════════════════════════════════════════════════
-
 @app.route("/rapport")
 @app.route("/rapport/<int:period_id>")
 def rapport(period_id=None):
     if period_id is None:
         p = get_active_period()
         period_id = p.id if p else None
-    if period_id is None:
+    if period_id is None or db.session.get(Period, period_id) is None:
         return render_template("rapport.html", overview=None, periods=[])
 
-    overview = get_period_overview(period_id)
+    overview = get_period_view(period_id)
     periods = Period.query.order_by(Period.start_date.desc()).all()
     return render_template("rapport.html", overview=overview, periods=periods, current_period_id=period_id)
 
@@ -212,96 +243,60 @@ def admin():
     users = User.query.order_by(User.sort_order, User.name).all()
     products = Product.query.order_by(Product.sort_order).all()
     periods = Period.query.order_by(Period.start_date.desc()).all()
-    return render_template("admin/index.html", period=period, users=users, products=products, periods=periods)
+    status = get_period_status(period) if period else None
+    return render_template("admin/index.html", period=period, users=users, products=products,
+                           periods=periods, status=status)
 
 
-# Vorige standen
-@app.route("/admin/vorige-stand", methods=["GET"])
-def admin_vorige_stand():
-    periods = Period.query.order_by(Period.start_date.desc()).all()
-    active = get_active_period()
-    return render_template("admin/vorige_stand.html", periods=periods, active=active)
-
-
-@app.route("/admin/vorige-stand/<int:period_id>", methods=["GET", "POST"])
-def admin_vorige_stand_period(period_id):
-    period = Period.query.get(period_id)
-    if not period:
-        return redirect(url_for("admin_vorige_stand"))
-
-    users = User.query.order_by(User.sort_order, User.name).all()
-
-    if request.method == "POST":
-        # Sla op als snapshot voor deze periode
-        PeriodStartBalance.query.filter_by(period_id=period_id).delete()
-        for u in users:
-            val = request.form.get(f"balance_{u.id}", "").strip()
-            balance = float(val) if val else 0.0
-            db.session.add(PeriodStartBalance(period_id=period_id, user_id=u.id, balance=balance))
-        # Als het de actieve periode is, ook previous_balance updaten
-        if period.is_active:
-            for u in users:
-                val = request.form.get(f"balance_{u.id}", "").strip()
-                if val:
-                    u.previous_balance = float(val)
-        db.session.commit()
-        return redirect(url_for("admin_vorige_stand_period", period_id=period_id))
-
-    # Haal huidige snapshot op voor deze periode
-    snaps = {s.user_id: s.balance for s in PeriodStartBalance.query.filter_by(period_id=period_id).all()}
-    # Fallback naar previous_balance als geen snapshot
-    balances = {u.id: snaps.get(u.id, u.previous_balance) for u in users}
-
-    return render_template("admin/vorige_stand.html",
-                           period=period, users=users, balances=balances,
-                           periods=None, active=None)
-
-
-# Gebruikers
+# Bewoners
 @app.route("/admin/users", methods=["GET", "POST"])
 def admin_users():
+    period = get_active_period()
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
             name = request.form.get("name", "").strip()
-            if name:
-                max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
-                user = User(name=name, previous_balance=float(request.form.get("previous_balance", 0)), sort_order=max_order + 1)
-                db.session.add(user)
-                db.session.commit()
+            if not name:
+                raise FormError("Naam: vul een naam in.")
+            max_order = db.session.query(db.func.max(User.sort_order)).scalar() or 0
+            db.session.add(User(name=name, sort_order=max_order + 1))
+            db.session.commit()
+            flash(f"{name} toegevoegd. Start in de lopende periode op €0,00.", "success")
         elif action == "edit":
-            user = User.query.get(request.form.get("user_id"))
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
             if user:
-                user.name = request.form.get("name", user.name).strip()
-                user.is_active = "is_active" in request.form
+                name = request.form.get("name", "").strip()
+                if name:
+                    user.name = name
                 user.participates_in_ho = "participates_in_ho" in request.form
-                user.previous_balance = float(request.form.get("previous_balance", user.previous_balance))
                 db.session.commit()
-        elif action == "delete":
-            user = User.query.get(request.form.get("user_id"))
-            if user:
-                try:
-                    # Verwijder eerst alle gekoppelde financiële data — anders
-                    # blokkeert de database het verwijderen van de gebruiker zelf.
-                    # LET OP: dit wist definitief eventuele openstaande schuld/tegoed.
-                    Tally.query.filter_by(user_id=user.id).delete()
-                    Payment.query.filter_by(user_id=user.id).delete()
-                    Correction.query.filter_by(user_id=user.id).delete()
-                    HOEventShare.query.filter_by(user_id=user.id).delete()
-                    PeriodStartBalance.query.filter_by(user_id=user.id).delete()
-                    db.session.delete(user)
-                    db.session.commit()
-                    flash(f"{user.name} en alle bijbehorende data zijn verwijderd.", "success")
-                except IntegrityError:
-                    db.session.rollback()
-                    flash(f"{user.name} kon niet verwijderd worden door een databasefout.", "error")
+        elif action == "leave":
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
+            if user and user.is_active:
+                user.is_active = False
+                user.left_at = date.today()
+                db.session.commit()
+                stand = 0
+                if period:
+                    stand = next((r["stand"] for r in compute_period(period.id)["user_rows"]
+                                  if r["user"]["id"] == user.id), 0)
+                if stand:
+                    flash(f"{user.name} is vertrokken en staat nog op {euro(stand, sign=True)}. "
+                          "Die stand blijft in de volgende periodes staan tot hij is vereffend.", "error")
+                else:
+                    flash(f"{user.name} is op vertrokken gezet.", "success")
+        elif action == "return":
+            user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
+            if user and not user.is_active:
+                user.is_active = True
+                user.left_at = None
+                db.session.commit()
         return redirect(url_for("admin_users"))
 
     users = User.query.order_by(User.sort_order, User.name).all()
-    period = get_active_period()
     user_stands = {}
     if period:
-        user_stands = get_stands_bulk(period.id, users)
+        user_stands = {r["user"]["id"]: r["stand"] for r in compute_period(period.id)["user_rows"]}
     return render_template("admin/users.html", users=users, user_stands=user_stands, period=period)
 
 
@@ -312,35 +307,45 @@ def admin_products():
         action = request.form.get("action")
         if action == "add":
             name = request.form.get("name", "").strip()
-            price = float(request.form.get("price", 0))
+            price_cents = parse_cents(request.form.get("price"), "Prijs")
             emoji = request.form.get("emoji", "🍺").strip()
-            sort_order = int(request.form.get("sort_order", 0))
+            sort_order = parse_int(request.form.get("sort_order"), "Volgorde", 0)
             image_url = request.form.get("image_url", "").strip() or None
             parent_product_id = request.form.get("parent_product_id") or None
-            parent_units = int(request.form.get("parent_units", 1) or 1)
+            parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
             if name:
-                product = Product(name=name, price=price, emoji=emoji, sort_order=sort_order,
+                product = Product(name=name, price_cents=price_cents, emoji=emoji, sort_order=sort_order,
                                   image_url=image_url, parent_product_id=parent_product_id,
                                   parent_units=parent_units)
                 db.session.add(product)
                 db.session.commit()
         elif action == "edit":
-            product = Product.query.get(request.form.get("product_id"))
+            product = db.session.get(Product, parse_int(request.form.get("product_id"), "Id"))
             if product:
                 product.name = request.form.get("name", product.name).strip()
-                product.price = float(request.form.get("price", product.price))
+                product.price_cents = parse_cents(request.form.get("price"), "Prijs", product.price_cents)
                 product.emoji = request.form.get("emoji", product.emoji).strip()
-                product.sort_order = int(request.form.get("sort_order", product.sort_order))
+                product.sort_order = parse_int(request.form.get("sort_order"), "Volgorde", product.sort_order)
                 product.is_active = "is_active" in request.form
                 product.image_url = request.form.get("image_url", "").strip() or None
                 product.parent_product_id = request.form.get("parent_product_id") or None
-                product.parent_units = int(request.form.get("parent_units", 1) or 1)
+                product.parent_units = parse_int(request.form.get("parent_units"), "Aantal eenheden", 1)
                 db.session.commit()
         elif action == "delete":
-            product = Product.query.get(request.form.get("product_id"))
+            product = db.session.get(Product, parse_int(request.form.get("product_id"), "Id"))
             if product:
-                db.session.delete(product)
-                db.session.commit()
+                in_use = (
+                    Tally.query.filter_by(product_id=product.id).first()
+                    or InventoryPurchase.query.filter_by(product_id=product.id).first()
+                    or InventorySnapshot.query.filter_by(product_id=product.id).first()
+                    or HOEvent.query.filter_by(beer_product_id=product.id).first()
+                    or Product.query.filter_by(parent_product_id=product.id).first()
+                )
+                if in_use:
+                    flash(f"{product.name} heeft turfjes, voorraad of koppelingen en kan niet worden verwijderd. Zet het op inactief.", "error")
+                else:
+                    db.session.delete(product)
+                    db.session.commit()
         return redirect(url_for("admin_products"))
 
     products = Product.query.order_by(Product.sort_order).all()
@@ -352,70 +357,77 @@ def admin_products():
 def admin_periods():
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "add":
-            name = request.form.get("name", "").strip()
-            start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
-            source_period_id = request.form.get("source_period_id") or None
-            bron = Period.query.get(int(source_period_id)) if source_period_id else get_active_period()
-            if bron:
-                users = User.query.all()
-                stands = get_stands_bulk(bron.id, users)
-                for u in users:
-                    u.previous_balance = stands[u.id]
-            Period.query.update({"is_active": False})
-            new_period = Period(name=name, start_date=start_date, is_active=True)
-            db.session.add(new_period)
-            db.session.flush()  # get new_period.id
-            users = User.query.all()
-            save_period_start_balances(new_period.id, users)
-            db.session.commit()
-        elif action == "copy_balances":
-            source_period_id = int(request.form.get("source_period_id"))
-            bron = Period.query.get(source_period_id)
-            active = get_active_period()
-            if bron and active:
-                users = User.query.all()
-                stands = get_stands_bulk(bron.id, users)
-                for u in users:
-                    u.previous_balance = stands[u.id]
-                save_period_start_balances(active.id, users)
-                db.session.commit()
-        elif action == "delete":
-            period = Period.query.get(int(request.form.get("period_id")))
-            if period and not period.is_active:
-                db.session.delete(period)
-                db.session.commit()
-        elif action == "activate":
-            Period.query.update({"is_active": False})
-            db.session.flush()
-            period = Period.query.get(int(request.form.get("period_id")))
-            if period:
-                period.is_active = True
-                db.session.commit()
-        elif action == "close":
-            period = Period.query.get(int(request.form.get("period_id")))
-            if period:
-                end_date_str = request.form.get("end_date", "").strip()
-                if end_date_str:
-                    period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-                period.is_active = False
-                db.session.commit()
+        if action == "first":
+            start = parse_date(request.form.get("start_date"), "Startdatum")
+            warnings = check_period_dates(start, None)
+            create_first_period(request.form.get("name", ""), start)
+            for w in warnings:
+                flash(w, "error")
+            flash("Periode aangemaakt.", "success")
         elif action == "edit":
-            period = Period.query.get(int(request.form.get("period_id")))
-            if period:
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
+            if period and period.is_active and not period.closed_at:
                 name = request.form.get("name", "").strip()
-                start_date_str = request.form.get("start_date", "")
-                end_date_str = request.form.get("end_date", "")
+                start = parse_date(request.form.get("start_date"), "Startdatum")
+                for w in check_period_dates(start, None, exclude_id=period.id):
+                    flash(w, "error")
                 if name:
                     period.name = name
-                if start_date_str:
-                    period.start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-                period.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
+                period.start_date = start
                 db.session.commit()
+                flash("Periode bijgewerkt.", "success")
+            else:
+                flash("Een afgesloten periode kan niet meer worden gewijzigd.", "error")
+        elif action == "delete":
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
+            if period and not period.is_active and not period.closed_at and not has_data(period):
+                db.session.delete(period)
+                db.session.commit()
+            else:
+                flash("Alleen een lege periode kan worden verwijderd.", "error")
         return redirect(url_for("admin_periods"))
 
     periods = Period.query.order_by(Period.start_date.desc()).all()
-    return render_template("admin/periods.html", periods=periods)
+    active = get_active_period()
+    start_balances = []
+    if active:
+        start_balances = [r for r in compute_period(active.id)["user_rows"]]
+    return render_template("admin/periods.html", periods=periods, active=active, start_balances=start_balances,
+                           today=date.today().isoformat())
+
+
+@app.route("/admin/periods/close", methods=["GET", "POST"])
+def admin_close_period():
+    period = get_active_period()
+    if not period or period.closed_at:
+        flash("Er is geen lopende periode om af te sluiten.", "error")
+        return redirect(url_for("admin_periods"))
+
+    if request.method == "POST":
+        end_date = parse_date(request.form.get("end_date"), "Einddatum")
+        next_start = parse_date(request.form.get("next_start"), "Startdatum nieuwe periode")
+        if "confirm" not in request.form:
+            raise FormError("Vink aan dat het rapport klopt voordat je afsluit.")
+        new_period, warnings = close_period(period, end_date, request.form.get("next_name", ""), next_start)
+        for w in warnings:
+            flash(w, "error")
+        flash(f"'{period.name}' is afgesloten en bevroren. '{new_period.name}' is gestart.", "success")
+        return redirect(url_for("rapport", period_id=period.id))
+
+    end_default = max(date.today(), period.start_date)
+    ov = compute_period(period.id)
+    try:
+        date_warnings = check_period_dates(period.start_date, end_default, exclude_id=period.id)
+    except PeriodError as err:
+        date_warnings = [str(err)]
+    if period.start_date > date.today():
+        date_warnings.append("De startdatum van deze periode ligt in de toekomst. Pas die eerst aan bij Periodes als dat een vergissing is.")
+    return render_template(
+        "admin/close_period.html", period=period, overview=ov,
+        blockers=close_blockers(ov), end_default=end_default.isoformat(),
+        next_name=default_next_name(end_default), today=date.today().isoformat(),
+        date_warnings=date_warnings,
+    )
 
 
 # Voorraad
@@ -433,7 +445,11 @@ def admin_inventory():
             for key, val in request.form.items():
                 if key.startswith("qty_"):
                     product_id = int(key[4:])
-                    qty = int(val or 0)
+                    if not val.strip():
+                        continue  # leeg = niet (opnieuw) geteld
+                    qty = parse_int(val, "Aantal")
+                    if qty < 0:
+                        raise FormError("Aantal mag niet negatief zijn.")
                     # Update or create snapshot
                     snap = InventorySnapshot.query.filter_by(
                         period_id=period.id, product_id=product_id, snapshot_type=snap_type
@@ -450,15 +466,15 @@ def admin_inventory():
             db.session.commit()
 
         elif action == "purchase":
-            product_id = int(request.form.get("product_id"))
-            quantity = int(request.form.get("quantity", 0))
+            product_id = parse_int(request.form.get("product_id"), "Product")
+            quantity = parse_int(request.form.get("quantity"), "Aantal")
             total_cost = request.form.get("total_cost")
             notes = request.form.get("notes", "").strip()
             purchase = InventoryPurchase(
                 period_id=period.id,
                 product_id=product_id,
                 quantity=quantity,
-                total_cost=float(total_cost) if total_cost else None,
+                total_cost_cents=parse_cents(total_cost, "Kosten") if total_cost else None,
                 notes=notes,
                 date=date.today(),
             )
@@ -466,15 +482,18 @@ def admin_inventory():
             db.session.commit()
 
         elif action == "delete_purchase":
-            purchase = InventoryPurchase.query.get(request.form.get("purchase_id"))
-            if purchase:
+            purchase = db.session.get(InventoryPurchase, parse_int(request.form.get("purchase_id"), "Id"))
+            if purchase and purchase.period_id == period.id:
                 db.session.delete(purchase)
                 db.session.commit()
 
         return redirect(url_for("admin_inventory"))
 
-    inventory = get_inventory_data(period.id)
-    products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
+    ov = compute_period(period.id)
+    inventory = ov["inventory"]
+    used_ids = {r["product"]["id"] for r in inventory}
+    products = [p for p in Product.query.filter_by(parent_product_id=None).order_by(Product.sort_order, Product.id)
+                if p.is_active or p.id in used_ids]
     purchases = InventoryPurchase.query.filter_by(period_id=period.id).order_by(InventoryPurchase.date.desc()).all()
 
     # Huidige snapshots
@@ -495,91 +514,81 @@ def admin_inventory():
         purchases=purchases,
         begin_snaps=begin_snaps,
         end_snaps=end_snaps,
+        complete=ov["inventory_complete"],
+        turfverlies=ov["turfverlies_total"],
     )
 
 
-# Betalingen
+# Betalingen en correcties (één pagina, twee tabbladen)
+def _money_page(tab, period, users, items, **extra):
+    return render_template("admin/money.html", tab=tab, period=period, users=users, items=items,
+                           today=date.today().isoformat(), **extra)
+
+
 @app.route("/admin/payments", methods=["GET", "POST"])
 def admin_payments():
     period = get_active_period()
     if not period:
-        return render_template("admin/payments.html", period=None, payments=[], users=[])
+        return _money_page("payments", None, [], [], totals={})
 
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
-            user_id = int(request.form.get("user_id"))
-            amount = float(request.form.get("amount", 0))
-            pay_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
-            notes = request.form.get("notes", "").strip()
-            payment = Payment(
-                period_id=period.id, user_id=user_id, amount=amount,
-                date=pay_date, notes=notes
-            )
-            db.session.add(payment)
+            user_id = parse_int(request.form.get("user_id"), "Persoon")
+            amount = parse_cents(request.form.get("amount"), "Bedrag")
+            if amount == 0:
+                raise FormError("Bedrag: vul een bedrag in dat niet nul is (negatief mag, bijv. een terugbetaling).")
+            pay_date = parse_date(request.form.get("date"), "Datum")
+            db.session.add(Payment(period_id=period.id, user_id=user_id, amount_cents=amount,
+                                   date=pay_date, notes=request.form.get("notes", "").strip()))
             db.session.commit()
+            flash("Overboeking toegevoegd.", "success")
         elif action == "delete":
-            payment = Payment.query.get(request.form.get("payment_id"))
-            if payment:
+            payment = db.session.get(Payment, parse_int(request.form.get("payment_id"), "Id"))
+            if payment and payment.period_id == period.id:
                 db.session.delete(payment)
                 db.session.commit()
         return redirect(url_for("admin_payments"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
-    payments = (
-        Payment.query.filter_by(period_id=period.id)
-        .order_by(Payment.date.desc())
-        .all()
-    )
-    # Totaal per persoon
+    users = User.query.order_by(User.is_active.desc(), User.sort_order, User.name).all()  # ook vertrokken bewoners: die kunnen nog betalen
+    payments = Payment.query.filter_by(period_id=period.id).order_by(Payment.date.desc(), Payment.id.desc()).all()
     totals = {}
-    for u in users:
-        totals[u.id] = sum(p.amount for p in payments if p.user_id == u.id)
-
-    return render_template(
-        "admin/payments.html",
-        period=period, payments=payments, users=users, totals=totals,
-        today=date.today().isoformat()
-    )
+    for p in payments:
+        totals[p.user_id] = totals.get(p.user_id, 0) + p.amount_cents
+    return _money_page("payments", period, users, payments, totals=totals)
 
 
-# Correcties
 @app.route("/admin/corrections", methods=["GET", "POST"])
 def admin_corrections():
     period = get_active_period()
     if not period:
-        return render_template("admin/corrections.html", period=None, corrections=[], users=[])
+        return _money_page("corrections", None, [], [])
 
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
-            user_id = int(request.form.get("user_id"))
-            amount = float(request.form.get("amount", 0))
+            user_id = parse_int(request.form.get("user_id"), "Persoon")
+            amount = parse_cents(request.form.get("amount"), "Bedrag")
             description = request.form.get("description", "").strip()
-            corr_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
-            corr = Correction(
-                period_id=period.id, user_id=user_id, amount=amount,
-                description=description, date=corr_date
-            )
-            db.session.add(corr)
+            if amount == 0:
+                raise FormError("Bedrag: een correctie van nul heeft geen effect.")
+            if len(description) < 3:
+                raise FormError("Omschrijving: vul in waarom je corrigeert.")
+            corr_date = parse_date(request.form.get("date"), "Datum")
+            db.session.add(Correction(period_id=period.id, user_id=user_id, amount_cents=amount,
+                                      description=description, date=corr_date))
             db.session.commit()
+            flash("Correctie toegevoegd.", "success")
         elif action == "delete":
-            corr = Correction.query.get(request.form.get("correction_id"))
-            if corr:
+            corr = db.session.get(Correction, parse_int(request.form.get("correction_id"), "Id"))
+            if corr and corr.period_id == period.id:
                 db.session.delete(corr)
                 db.session.commit()
         return redirect(url_for("admin_corrections"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
-    corrections = (
-        Correction.query.filter_by(period_id=period.id)
-        .order_by(Correction.date.desc())
-        .all()
-    )
-    return render_template(
-        "admin/corrections.html",
-        period=period, corrections=corrections, users=users
-    )
+    users = User.query.order_by(User.is_active.desc(), User.sort_order, User.name).all()
+    corrections = Correction.query.filter_by(period_id=period.id).order_by(Correction.date.desc(), Correction.id.desc()).all()
+    return _money_page("corrections", period, users, corrections)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -597,20 +606,20 @@ def ho():
 
         if action == "add_event":
             name = request.form.get("name", "").strip()
-            base_cost = float(request.form.get("total_cost", 0) or 0)
+            base_cost = parse_cents(request.form.get("total_cost"), "Kosten", 0)
             distribution_type = request.form.get("distribution_type", "equal_all")
             notes = request.form.get("notes", "").strip()
-            ev_date = datetime.strptime(request.form.get("date"), "%Y-%m-%d").date()
+            ev_date = parse_date(request.form.get("date"), "Datum")
 
             beer_product_id = request.form.get("beer_product_id") or None
             beer_quantity = request.form.get("beer_quantity") or None
-            beer_cost = 0.0
+            beer_cost = 0
             if beer_product_id and beer_quantity:
-                beer_product_id = int(beer_product_id)
-                beer_quantity = int(beer_quantity)
-                bp = Product.query.get(beer_product_id)
+                beer_product_id = parse_int(beer_product_id, "Bierproduct")
+                beer_quantity = parse_int(beer_quantity, "Aantal bier")
+                bp = db.session.get(Product, beer_product_id)
                 if bp:
-                    beer_cost = bp.price * beer_quantity
+                    beer_cost = bp.price_cents * beer_quantity
             else:
                 beer_product_id = None
                 beer_quantity = None
@@ -618,7 +627,7 @@ def ho():
             event = HOEvent(
                 period_id=period.id,
                 name=name,
-                total_cost=base_cost + beer_cost,
+                total_cost_cents=base_cost + beer_cost,
                 distribution_type=distribution_type,
                 notes=notes,
                 date=ev_date,
@@ -634,34 +643,30 @@ def ho():
                 for u in users:
                     field = f"share_{u.id}"
                     if distribution_type == "equal_selected" and f"select_{u.id}" in request.form:
-                        share = HOEventShare(ho_event_id=event.id, user_id=u.id, amount=0)
+                        share = HOEventShare(ho_event_id=event.id, user_id=u.id, amount_cents=0)
                         db.session.add(share)
                     elif distribution_type == "manual":
                         amount_str = request.form.get(field, "").strip()
                         if amount_str:
                             share = HOEventShare(
                                 ho_event_id=event.id, user_id=u.id,
-                                amount=float(amount_str)
+                                amount_cents=parse_cents(amount_str, "Aandeel")
                             )
                             db.session.add(share)
             db.session.commit()
 
         elif action == "delete_event":
-            event = HOEvent.query.get(request.form.get("event_id"))
-            if event:
+            event = db.session.get(HOEvent, parse_int(request.form.get("event_id"), "Id"))
+            if event and event.period_id == period.id:
                 db.session.delete(event)
                 db.session.commit()
 
         return redirect(url_for("ho"))
 
-    users = User.query.order_by(User.sort_order, User.name).all()
+    users = User.query.filter_by(is_active=True).order_by(User.sort_order, User.name).all()
     products = Product.query.filter_by(is_active=True).order_by(Product.sort_order).all()
-    ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc()).all()
-    turfverlies = get_total_turfverlies(period.id)
-    inventory = get_inventory_data(period.id)
-
-    active_user_ids = [u.id for u in users if u.is_active]
-    ho_per_user = get_ho_shares_bulk(period.id, users, turfverlies)
+    ho_events = HOEvent.query.filter_by(period_id=period.id).order_by(HOEvent.date.desc(), HOEvent.id.desc()).all()
+    ov = compute_period(period.id)
 
     return render_template(
         "ho.html",
@@ -669,10 +674,8 @@ def ho():
         ho_events=ho_events,
         users=users,
         products=products,
-        active_user_ids=active_user_ids,
-        turfverlies=turfverlies,
-        inventory=inventory,
-        ho_per_user=ho_per_user,
+        overview=ov,
+        today=date.today().isoformat(),
     )
 
 
@@ -694,47 +697,5 @@ def manifest():
     })
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# GOOGLE SHEETS SYNC
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route("/api/sync-sheets", methods=["POST"])
-def sync_sheets():
-    try:
-        from sheets_sync import sync_all
-        result = sync_all(app)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/setup-tabs", methods=["POST"])
-def setup_tabs():
-    try:
-        from sheets_sync import setup_new_tabs
-        result = setup_new_tabs(app)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-def _scheduled_sync():
-    try:
-        from sheets_sync import sync_all
-        result = sync_all(app)
-        print(f"[Sheets sync] {result}")
-    except Exception as e:
-        print(f"[Sheets sync] Fout: {e}")
-
-
-try:
-    create_tables()
-except Exception as e:
-    print(f"[create_tables] Fout bij opstarten: {e}")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(_scheduled_sync, "cron", hour=2, minute=0)
-scheduler.start()
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=8080, debug=os.environ.get("FLASK_DEBUG") == "1", use_reloader=False)

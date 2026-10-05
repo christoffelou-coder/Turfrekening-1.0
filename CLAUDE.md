@@ -1,85 +1,80 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Richtlijnen voor Claude Code in deze repository.
 
 ## Project
 
-Turfrekening — een drank-bijhoudsysteem voor een studentenhuis. Gebruikt op een iPad om bij te houden wie wat heeft gedronken. Data staat in Supabase, de app draait op Railway.
+Turfrekening: een drank-bijhoudsysteem voor een studentenhuis. Op een iPad turft iedereen wat hij of zij pakt; de beheerder voert betalingen, inkoop en gedeelde kosten (HO) in en sluit elke periode af. Data staat in Supabase (Postgres), de app draait op Railway (gunicorn).
 
 ## Lokaal draaien
 
 ```bash
-# Kopieer .env.example naar .env en vul DATABASE_URL in
-python3 app.py        # start op poort 8080
-# of
-bash start.sh
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env            # DATABASE_URL leeg laten voor lokale SQLite
+export FLASK_DEBUG=1            # alleen lokaal: SECRET_KEY mag dan ontbreken
+flask --app app db upgrade      # maakt het schema
+python scripts/seed_dev.py      # optioneel: testdata (weigert Postgres)
+python3 app.py                  # poort 8080
+pytest                          # alle tests, eigen SQLite, nooit de echte database
 ```
 
-De app verbindt automatisch met Supabase als `DATABASE_URL` in `.env` staat. Zonder die variabele valt hij terug op lokale SQLite (`turfrekening.db`).
+Zonder `DATABASE_URL` gebruikt de app lokaal `turfrekening.db` (staat in `.gitignore`). Zet `DATABASE_URL` in `.env` nooit op de productie-database om te testen.
 
-## Deploy workflow
+## Deploy
 
-**Lokaal → GitHub → Railway (automatisch)**
+Lokaal → GitHub → Railway (deployt vanaf `main`). Eerst op een branch werken. Start: `gunicorn app:app` (zie `railway.json`).
 
-```bash
-git add .
-git commit -m "omschrijving"
-git push origin main   # Railway deployt automatisch
-```
+Omgevingsvariabelen op Railway: `DATABASE_URL` en `SECRET_KEY` (verplicht voor CSRF-bescherming, de app start zonder niet). Er is bewust geen login: iedereen die de URL kent kan bij admin.
 
-GitHub repo: `https://github.com/christoffelou-coder/Turfrekening-1.0`
+**Databasewijzigingen** gaan via Flask-Migrate (`migrations/`). Draai ze niet automatisch bij het starten:
 
-Railway draait de Flask app rechtstreeks.
+1. Maak eerst een backup in Supabase.
+2. `flask --app app db upgrade` met `DATABASE_URL` van de doeldatabase.
+3. Nieuwe wijziging maken: model aanpassen, `flask --app app db migrate -m "omschrijving"`, de gegenereerde migratie nakijken (vooral data-omzettingen), testen op een kopie.
+
+Een bestaande database die al het oude schema had, eenmalig markeren met `flask --app app db stamp 7615fb1eb8e0` (baseline) en daarna `upgrade`.
 
 ## Architectuur
 
 ```
-app.py          — Flask routes en API endpoints
-models.py       — SQLAlchemy modellen (Period, User, Product, Tally, ...)
-calculations.py — Alle financiële berekeningen (stand, HO, turfverlies)
-sheets_sync.py  — Google Sheets sync (gspread v6)
-templates/      — Jinja2 HTML templates
-  turf.html     — Hoofdscherm (iPad interface)
-  rapport.html  — Maandoverzicht
-  admin/        — Beheerpagina's
+app.py          Flask-routes en API (turfscherm, rapport, admin)
+models.py       SQLAlchemy-modellen
+calculations.py compute_period(): het ENIGE rekenpad voor standen, HO en voorraad
+periods.py      afsluiten/bevriezen, nieuwe periode starten, datumcontroles, get_period_view()
+money.py        centen-helpers (parse, weergave, split_even)
+filters.py      Jinja-filters euro / euro_cls
+forms.py        parse_int / parse_date helpers met nette foutmeldingen
+static/css/app.css  het hele stylesheet (tokens bovenaan); geen CSS-framework
+templates/      base.html, turf.html, rapport.html, ho.html, admin/*
+tests/          pytest
 ```
 
-### Berekeningsformule per persoon
-`Stand = vorige_stand + overgemaakt − geturfd − HO_aandeel + correctie`
+## Regels die niet gebroken mogen worden
 
-### HO (Huishoudelijke Onkosten)
-Turfverlies + HO-events worden verdeeld via `distribution_type`:
-- `equal_all` — gelijk over alle actieve gebruikers
-- `equal_selected` — gelijk over geselecteerde gebruikers (via `HOEventShare`)
-- `manual` — handmatig bedrag per persoon
+**Geld is altijd in hele centen (`int`)**, kolommen heten `*_cents`. Formulieren parsen met `parse_cents`, tonen met het `euro`-filter (`−€1,01`, `+€1,01`, `—` bij nul). Nooit `float` voor bedragen. Verdelingen gaan met `split_even`, zodat de aandelen exact optellen.
 
-## Google Sheets sync
+**Eén rekenpad.** Alles gaat via `compute_period(period_id)`:
+`Stand = beginstand + overgemaakt − geturfd − HO + correctie`.
+- Geen beginstand in een periode = 0, nooit een terugval op iets anders.
+- Een turfje onthoudt zijn prijs (`Tally.unit_price_cents`); prijswijzigingen raken oude turfjes niet.
+- Turfverlies is **voorlopig en wordt niet verdeeld** zolang niet elk product met voorraad of turfjes een eindtelling heeft.
+- Gedeactiveerde producten tellen mee in een periode waarin ze turfjes, inkoop of voorraad hebben.
 
-Spreadsheet ID (bestaand): `10MGTFssPTg6GUmMp0sEp-O43wY8_aUd8BqvI190W4FY`
+**Afsluiten = bevriezen.** `periods.close_period` slaat het rapport één keer op als `PeriodReport` (JSON), zet `closed_at`, start de nieuwe periode met eindstanden als beginstanden en de eindtelling als beginvoorraad. Rapporten van afgesloten periodes lezen alleen uit `PeriodReport` (`get_period_view`) en worden nooit opnieuw berekend. Afsluiten kan niet zonder volledige eindtelling. Een afgesloten periode kan niet meer worden gewijzigd of geactiveerd. Periodes zonder `closed_at` die niet actief zijn, zijn "historisch" (van vóór deze werkwijze).
 
-Tabs die gesynchroniseerd worden: **Overview** (C/D/E/F/G/I), **Invullen** (voorraad + turfcounts + HO), **Betalingen** (kolom H).
+**Bewoners worden nooit verwijderd.** Vertrekt iemand: `is_active = False` en `left_at`. Zo blijven geschiedenis en eventuele schuld bewaard. Een vertrokken bewoner met saldo blijft in de volgende periodes staan tot hij of zij vereffend is. Nieuwe bewoners starten op €0,00.
 
-**gspread v6 let op:** argument volgorde is `ws.update(values, range_name)` — NIET `ws.update(range_name, values)`.
+**Producten** met turfjes, voorraad of koppelingen worden niet verwijderd, alleen op inactief gezet.
 
-Credentials: `google_credentials.json` (niet in git). Op Railway via env var `GOOGLE_CREDENTIALS_JSON`.
+**Ongedaan maken** van een turfje (`DELETE /api/tally/<id>`) mag alleen in de actieve periode en binnen 10 minuten. Daarna gebruik je een correctie (met verplichte omschrijving).
 
-Manueel triggeren: `POST /api/sync-sheets`
-
-### Product aliassen
-"Bier", "Pils", "biertje" zijn synoniemen — zie `PRODUCT_ALIASES` in `sheets_sync.py`.
-
-## Omgevingsvariabelen
-
-| Variabele | Waar |
-|---|---|
-| `DATABASE_URL` | Supabase pooler URL (eu-west-1) |
-| `SECRET_KEY` | Flask session key |
-| `GOOGLE_CREDENTIALS_JSON` | Service account JSON als string (Railway) |
-
-Supabase connectie: `aws-0-eu-west-1.pooler.supabase.com:5432`, gebruikersnaam formaat: `postgres.[project-id]`
+**Beveiliging:** geen login (bewuste keuze van de beheerder). Alle POST/DELETE hebben wel CSRF-bescherming (formulieren `csrf_token`, turfscherm header `X-CSRFToken`).
 
 ## Gebruikersvolgorde
 
-Altijd op `sort_order` dan `name` sorteren: `User.query.order_by(User.sort_order, User.name)`. Volgorde: Stos, Teun, Godard, Ruben, Thomas, Wessel, Kaastra, Stijn, Moffel, Beukers, Luis, De bie, Noah, Romeijn, Pablo, Jorge.
+Altijd sorteren op `User.sort_order`, dan `User.name`. De huidige bewoners en hun volgorde staan in de admin (Bewoners); zet ze niet in deze file, ze veranderen.
 
-Inactieve gebruikers (Thomas, Noah, Pablo) moeten WEL meegenomen worden in berekeningen — zij kunnen schulden hebben.
+## Stijl van de interface
+
+Eén stylesheet met tokens in `:root` (kleuren, ruimtes, radius); geen losse hexwaarden of `<style>`-blokken in templates. Eén accentkleur (amber) per scherm, groen/rood alleen voor standen. Labels in gewone zinnen, geen hoofdletters. Op het turfscherm geen saldo's tonen.

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import head, csrf %}
+{% block title %}Periode afsluiten · Turfrekening{% endblock %}
+{% block content %}
+<div class="page">
+  {{ head('Periode afsluiten', back='/admin/periods', back_label='Periodes') }}
+  {% set ov = overview %}
+  <div class="stack">
+
+    <section class="card">
+      <h2>1. Eindtelling voorraad</h2>
+      {% if blockers %}
+        {% for b in blockers %}<p style="color:var(--accent); margin:0 0 var(--space-2)">{{ b }}</p>{% endfor %}
+        <a href="/admin/inventory" class="btn">Naar voorraad</a>
+      {% else %}
+        <p class="pos" style="margin:0">Voorraad is geteld voor alle producten.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>2. Controle</h2>
+      {% if ov.warnings %}
+      <ul class="warn-list">{% for w in ov.warnings %}<li>{{ w.message }}</li>{% endfor %}</ul>
+      {% else %}<p class="text-muted" style="margin:0">Geen aandachtspunten.</p>{% endif %}
+
+      <div class="table-wrap" style="margin-top:var(--space-4)"><table class="table">
+        <thead><tr><th>Naam</th><th class="num">Vorige stand</th><th class="num">Overgemaakt</th><th class="num">Geturfd</th><th class="num">HO</th><th class="num">Correctie</th><th class="num">Eindstand</th></tr></thead>
+        <tbody>{% for row in ov.user_rows %}
+          <tr><td class="strong">{{ row.user.name }}{% if not row.user.is_active %} <span class="badge">vertrokken</span>{% endif %}</td>
+            <td class="num">{{ row.vorige_stand|euro(sign=True) }}</td><td class="num">{{ row.overgemaakt|euro(sign=True) }}</td>
+            <td class="num">{{ (-row.geturfd)|euro }}</td><td class="num">{{ (-row.ho)|euro(sign=True) }}</td><td class="num">{{ row.correctie|euro(sign=True) }}</td>
+            <td class="num strong {{ row.stand|euro_cls }}">{{ row.stand|euro(sign=True) }}</td></tr>
+        {% endfor %}</tbody>
+        <tfoot><tr><td>Totaal</td><td class="num">{{ ov.totals.vorige_stand|euro(sign=True) }}</td><td class="num">{{ ov.totals.overgemaakt|euro(sign=True) }}</td>
+          <td class="num">{{ (-ov.totals.geturfd)|euro }}</td><td class="num">{{ (-ov.totals.ho)|euro(sign=True) }}</td><td class="num">{{ ov.totals.correctie|euro(sign=True) }}</td>
+          <td class="num {{ ov.totals.stand|euro_cls }}">{{ ov.totals.stand|euro(sign=True) }}</td></tr></tfoot>
+      </table></div>
+      <p style="margin-bottom:0"><a href="/rapport/{{ period.id }}" target="_blank" class="text-small">Volledig rapport openen</a></p>
+    </section>
+
+    <section class="card">
+      <h2>3. Afsluiten en nieuwe periode starten</h2>
+      <p class="text-muted text-small" style="margin-top:0">Na het afsluiten is dit rapport bevroren en kan er niets meer aan veranderen. De eindstanden worden de beginstanden van de nieuwe periode, de eindtelling wordt de beginvoorraad.</p>
+      <form method="POST" class="stack">{{ csrf() }}
+        <div class="form-row">
+          <label class="field"><span>Einddatum</span><input type="date" name="end_date" id="endDate" value="{{ end_default }}" required class="input"></label>
+          <label class="field"><span>Naam nieuwe periode</span><input name="next_name" value="{{ next_name }}" required class="input" style="min-width:260px"></label>
+          <label class="field"><span>Start nieuwe periode</span><input type="date" name="next_start" id="nextStart" value="{{ end_default }}" required class="input"></label>
+        </div>
+        <p class="text-faint text-tiny hidden" id="gapWarn" style="margin:0; color:var(--accent)">De nieuwe periode begint niet op de einddatum van de vorige.</p>
+        {% for w in date_warnings %}<p class="text-small" style="margin:0; color:var(--accent)">{{ w }}</p>{% endfor %}
+        <label class="check" style="max-width:360px"><input type="checkbox" name="confirm" required> Het rapport hierboven klopt</label>
+        <div><button class="btn btn-primary" {% if blockers %}disabled{% endif %}>Periode afsluiten</button></div>
+      </form>
+    </section>
+  </div>
+</div>
+<script>
+(function () {
+  const end = document.getElementById('endDate'), start = document.getElementById('nextStart'), warn = document.getElementById('gapWarn');
+  let touched = false;
+  start.addEventListener('input', () => { touched = true; check(); });
+  end.addEventListener('input', () => { if (!touched) start.value = end.value; check(); });
+  function check() { warn.classList.toggle('hidden', start.value === end.value); }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import head, csrf, no_period %}
+{% block title %}Betalingen en correcties · Turfrekening{% endblock %}
+{% block content %}
+<div class="page">
+  {{ head('Betalingen en correcties') }}
+
+  {% if not period %}{{ no_period() }}{% else %}
+  <p class="text-muted text-small" style="margin-top:calc(-1 * var(--space-3));">Periode: {{ period.name }}</p>
+
+  <nav class="tabs" aria-label="Soort">
+    <a class="tab" href="/admin/payments" {% if tab == 'payments' %}aria-current="page"{% endif %}>Overboekingen</a>
+    <a class="tab" href="/admin/corrections" {% if tab == 'corrections' %}aria-current="page"{% endif %}>Correcties</a>
+  </nav>
+
+  <div class="stack">
+  {% if tab == 'payments' %}
+    <section class="card">
+      <h2>Nieuwe overboeking</h2>
+      <form method="POST" class="form-row">{{ csrf() }}
+        <input type="hidden" name="action" value="add">
+        <label class="field"><span>Persoon</span>
+          <select name="user_id" class="input">{% for u in users %}<option value="{{ u.id }}">{{ u.name }}{% if not u.is_active %} (inactief){% endif %}</option>{% endfor %}</select></label>
+        <label class="field"><span>Bedrag (€, negatief = terugbetaling)</span>
+          <input name="amount" type="number" step="0.01" required placeholder="50,00" class="input" style="width:120px"></label>
+        <label class="field"><span>Datum</span><input name="date" type="date" required value="{{ today }}" class="input"></label>
+        <label class="field" style="flex:1"><span>Notitie (optioneel)</span><input name="notes" class="input"></label>
+        <button class="btn btn-primary">Toevoegen</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Alle overboekingen</h2>
+      {% if items %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Datum</th><th>Persoon</th><th class="num">Bedrag</th><th>Notitie</th><th></th></tr></thead>
+        <tbody>{% for p in items %}
+          <tr><td class="text-muted">{{ p.date.strftime('%d-%m-%Y') }}</td><td class="strong">{{ p.user.name }}</td>
+              <td class="num">{{ p.amount_cents|euro(sign=True) }}</td><td class="text-muted">{{ p.notes or '' }}</td>
+              <td class="num"><form method="POST" onsubmit="return confirm('Deze overboeking verwijderen?')">{{ csrf() }}
+                <input type="hidden" name="action" value="delete"><input type="hidden" name="payment_id" value="{{ p.id }}">
+                <button class="btn btn-danger btn-small">Verwijderen</button></form></td></tr>
+        {% endfor %}</tbody>
+        <tfoot><tr><td colspan="2">Totaal</td><td class="num">{{ totals.values()|sum|euro(sign=True) }}</td><td colspan="2"></td></tr></tfoot>
+      </table></div>
+      {% else %}
+      <div class="empty"><p>Nog geen overboekingen in deze periode.</p></div>
+      {% endif %}
+    </section>
+
+  {% else %}
+    <section class="card">
+      <h2>Nieuwe correctie</h2>
+      <p class="text-muted text-small" style="margin-top:0">Positief = tegoed erbij, negatief = bedrag eraf. Een omschrijving is verplicht, zodat het in het rapport te volgen is.</p>
+      <form method="POST" class="form-row">{{ csrf() }}
+        <input type="hidden" name="action" value="add">
+        <label class="field"><span>Persoon</span>
+          <select name="user_id" class="input">{% for u in users %}<option value="{{ u.id }}">{{ u.name }}{% if not u.is_active %} (inactief){% endif %}</option>{% endfor %}</select></label>
+        <label class="field"><span>Bedrag (€, + of −)</span>
+          <input name="amount" type="number" step="0.01" required placeholder="-5,00" class="input" style="width:130px"></label>
+        <label class="field"><span>Datum</span><input name="date" type="date" required value="{{ today }}" class="input"></label>
+        <label class="field" style="flex:1"><span>Omschrijving</span><input name="description" required minlength="3" placeholder="Bijv. terugbetaling boodschappen" class="input"></label>
+        <button class="btn btn-primary">Toevoegen</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Alle correcties</h2>
+      {% if items %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Datum</th><th>Persoon</th><th class="num">Bedrag</th><th>Omschrijving</th><th></th></tr></thead>
+        <tbody>{% for c in items %}
+          <tr><td class="text-muted">{{ c.date.strftime('%d-%m-%Y') }}</td><td class="strong">{{ c.user.name }}</td>
+              <td class="num {{ c.amount_cents|euro_cls }}">{{ c.amount_cents|euro(sign=True) }}</td><td class="text-muted">{{ c.description or '' }}</td>
+              <td class="num"><form method="POST" onsubmit="return confirm('Deze correctie verwijderen?')">{{ csrf() }}
+                <input type="hidden" name="action" value="delete"><input type="hidden" name="correction_id" value="{{ c.id }}">
+                <button class="btn btn-danger btn-small">Verwijderen</button></form></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% else %}
+      <div class="empty"><p>Nog geen correcties in deze periode.</p></div>
+      {% endif %}
+    </section>
+  {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

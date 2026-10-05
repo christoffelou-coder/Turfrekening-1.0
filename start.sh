@@ -1,4 +1,5 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 echo "🍺 Turfrekening starten..."
-python3 app.py
+export FLASK_DEBUG=1
+python3 -m flask --app app db upgrade && python3 app.py
