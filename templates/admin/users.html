@@ -23,7 +23,7 @@
       <h2>{{ title }} <span class="text-muted text-small" style="font-weight:400">({{ group|length }})</span></h2>
       {% for user in group %}
       {% set stand = user_stands.get(user.id) %}
-      <div class="list-item" style="flex-wrap:wrap;">
+      <div class="list-item">
         <div class="grow">
           <div class="strong">{{ user.name }}
             {% if not user.participates_in_ho %}<span class="badge">geen HO</span>{% endif %}
@@ -31,7 +31,7 @@
           </div>
         </div>
         <div class="num strong {{ stand|euro_cls }}" title="Stand deze periode">{% if period %}{{ stand|euro(sign=True) }}{% endif %}</div>
-        <details class="edit" style="flex-basis:100%; order:3;">
+        <details class="edit">
           <summary class="btn btn-small" style="width:max-content">Bewerken</summary>
           <div class="form-row card-inset">
             <form method="POST" class="form-row">{{ csrf() }}

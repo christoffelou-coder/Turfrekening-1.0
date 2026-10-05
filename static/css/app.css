@@ -258,9 +258,11 @@ textarea.input { padding: var(--space-2) var(--space-3); min-height: 80px; }
 .check input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .check .input { min-height: 32px; width: 90px; margin-left: auto; }
 .hidden { display: none !important; }
-.list-item { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.list-item { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
 .list-item:last-child { border-bottom: 0; }
-.list-item .grow { flex: 1; min-width: 0; }
+.list-item .grow { flex: 1 1 200px; min-width: 0; }
+.list-item > details.edit { flex: 1 0 100%; order: 3; }
+.list-item > details.edit:not([open]) { flex: 0 0 auto; order: 2; margin-left: auto; }
 details.edit > summary { list-style: none; cursor: pointer; }
 details.edit > summary::-webkit-details-marker { display: none; }
 details.edit[open] > summary { margin-bottom: var(--space-3); }

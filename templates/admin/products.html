@@ -40,7 +40,7 @@
           </div>
           <div class="text-muted text-small">{{ product.price_cents|euro }} · volgorde {{ product.sort_order }}</div>
         </div>
-        <details class="edit" style="flex-basis:100%; order:3;">
+        <details class="edit">
           <summary class="btn btn-small" style="width:max-content">Bewerken</summary>
           <form method="POST" class="form-row card-inset">{{ csrf() }}
             <input type="hidden" name="action" value="edit"><input type="hidden" name="product_id" value="{{ product.id }}">
