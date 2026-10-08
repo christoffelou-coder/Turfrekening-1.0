@@ -39,7 +39,7 @@
     <div class="scroller user-scroll" id="userScroll">
     <div class="user-grid locked" id="users">
       {% for user in users %}
-      <button type="button" class="user-btn" data-id="{{ user.id }}" data-name="{{ user.name }}">
+      <button type="button" class="user-btn" data-id="{{ user.id }}" data-name="{{ user.name }}"{% set usrc = user.sound_url|sound_src %}{% if usrc %} data-sound="{{ usrc }}"{% endif %}>
         <span class="uname">{{ user.name }}</span>
         <span class="ucount"></span>
       </button>
@@ -140,16 +140,17 @@
       });
     } catch (e) {}
   }
-  const SOUND_MAX_MS = 2000;
+  const SOUND_MAX_MS = 2000;       // geluid per product
+  const USER_SOUND_MS = 2500;      // persoonlijk geluid
   const audioCache = {};
-  function playSound(url) {
+  function playSound(url, maxMs) {
     if (!soundOn || !url) return;
     if (url === 'piep') { piep(); return; }
     const a = audioCache[url] || (audioCache[url] = new Audio(url));
     clearTimeout(a._stop);
     try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) {}
     // een geluid duurt hooguit een paar seconden, ook bij een lang bestand
-    a._stop = setTimeout(() => { try { a.pause(); a.currentTime = 0; } catch (e) {} }, SOUND_MAX_MS);
+    a._stop = setTimeout(() => { try { a.pause(); a.currentTime = 0; } catch (e) {} }, maxMs || SOUND_MAX_MS);
   }
   $$('.product-btn').forEach(btn => btn.addEventListener('click', () => {
     $$('.product-btn').forEach(b => b.classList.remove('selected'));
@@ -175,8 +176,10 @@
     // verwacht totaal na deze tik: bij elke N-de stuk meteen het geluid (binnen de tik)
     const expected = Math.max(0, parseInt(btn.dataset.count || '0', 10) + qty);
     if (qty > 0 && product.sound && product.every > 0 && expected % product.every === 0) {
-      playSound(product.sound);
+      playSound(product.sound);   // een product-mijlpaal (bijv. elke 3e ei) gaat voor
       btn.classList.add('hit'); setTimeout(() => btn.classList.remove('hit'), 700);
+    } else if (qty > 0 && btn.dataset.sound) {
+      playSound(btn.dataset.sound, USER_SOUND_MS);   // persoonlijk geluid van deze bewoner
     }
     fetch('/api/tally', {
       method: 'POST',

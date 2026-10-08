@@ -49,20 +49,25 @@ def sound_src(value):
     return f"/static/sounds/{filename}" if filename else ""
 
 
-def parse_sound(raw_url, raw_every):
+def normalize_sound(raw_url):
     """Geluid: 'piep', de naam van een geluid in static/sounds (bv. 'kakelende kip'),
-    een https-link of een pad onder /static/."""
+    een https-link of een pad onder /static/. Leeg = geen geluid (None)."""
     url = (raw_url or "").strip()
     if url and url != "piep" and not url.startswith(("http://", "https://", "/static/")):
         name = _slug(url)
         if name not in available_sounds():
-            namen = ", ".join(["piep"] + list(available_sounds())) 
+            namen = ", ".join(["piep"] + list(available_sounds()))
             raise FormError(f"Geluid-link: '{url}' is niet bekend. Kies uit: {namen}, of gebruik een https-link naar een mp3.")
         url = name
+    return url or None
+
+
+def parse_sound(raw_url, raw_every):
+    url = normalize_sound(raw_url)
     every = parse_int(raw_every, "Geluid elke … stuks", 3)
     if every < 1 or every > 100:
         raise FormError("Geluid elke … stuks: kies een getal tussen 1 en 100.")
-    return (url or None), every
+    return url, every
 
 
 app = Flask(__name__)
@@ -344,6 +349,7 @@ def admin_users():
                 if name:
                     user.name = name
                 user.participates_in_ho = "participates_in_ho" in request.form
+                user.sound_url = normalize_sound(request.form.get("sound_url"))
                 db.session.commit()
         elif action == "leave":
             user = db.session.get(User, parse_int(request.form.get("user_id"), "Id"))
@@ -372,7 +378,8 @@ def admin_users():
     user_stands = {}
     if period:
         user_stands = {r["user"]["id"]: r["stand"] for r in compute_period(period.id)["user_rows"]}
-    return render_template("admin/users.html", users=users, user_stands=user_stands, period=period)
+    return render_template("admin/users.html", users=users, user_stands=user_stands, period=period,
+                           sounds=list(available_sounds()))
 
 
 # Producten

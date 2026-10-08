@@ -30,6 +30,8 @@ class User(db.Model):
     # is_active = staat op het turfscherm en in nieuwe periodes; False = vertrokken
     is_active = db.Column(db.Boolean, default=True)
     left_at = db.Column(db.Date, nullable=True)
+    # Persoonlijk geluidje: speelt (kort) bij elke tik van deze bewoner op het turfscherm
+    sound_url = db.Column(db.Text, nullable=True)
     participates_in_ho = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
 

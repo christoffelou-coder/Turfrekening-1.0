@@ -122,3 +122,22 @@ def test_geluid_op_naam_uit_static_sounds(admin, basis):
     # het bestand wordt echt geserveerd
     r = admin.get("/static/sounds/kakelende-kip.mp3")
     assert r.status_code == 200 and r.mimetype in ("audio/mpeg", "audio/mp3")
+
+
+def test_persoonlijk_geluid_voor_bewoner(admin, basis):
+    from models import User
+    luis = basis["users"][0]
+    admin.post("/admin/users", data={"action": "edit", "user_id": luis.id, "name": luis.name,
+                                     "participates_in_ho": "on", "sound_url": "Kakelende Kip"})
+    db.session.refresh(luis)
+    assert luis.sound_url == "kakelende-kip"
+    html = admin.get("/").get_data(as_text=True)
+    assert 'data-name="A" data-sound="/static/sounds/kakelende-kip.mp3"' in html
+    # onbekende naam geweigerd, leeg wist het geluid
+    admin.post("/admin/users", data={"action": "edit", "user_id": luis.id, "name": luis.name, "sound_url": "nietbestaand"})
+    db.session.refresh(luis)
+    assert luis.sound_url == "kakelende-kip"
+    admin.post("/admin/users", data={"action": "edit", "user_id": luis.id, "name": luis.name, "sound_url": ""})
+    db.session.refresh(luis)
+    assert luis.sound_url is None
+    assert "data-sound" not in admin.get("/").get_data(as_text=True).split('data-name="B"')[0].split('data-name="A"')[1]

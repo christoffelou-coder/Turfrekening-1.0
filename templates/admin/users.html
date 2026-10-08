@@ -2,6 +2,7 @@
 {% from "_macros.html" import head, csrf %}
 {% block title %}Bewoners · Turfrekening{% endblock %}
 {% block content %}
+<datalist id="geluiden"><option value="piep">{% for s in sounds %}<option value="{{ s }}">{% endfor %}</datalist>
 <div class="page">
   {{ head('Bewoners') }}
   <div class="stack">
@@ -13,7 +14,7 @@
         <label class="field" style="flex:1; max-width:320px"><span>Naam</span><input name="name" required class="input"></label>
         <button class="btn btn-primary">Toevoegen</button>
       </form>
-      <p class="text-muted text-small" style="margin-bottom:0">Een nieuwe bewoner begint op €0,00 en staat meteen op het turfscherm. Bewoners worden nooit verwijderd: als iemand vertrekt zet je hem of haar op vertrokken, zodat de geschiedenis klopt.</p>
+      <p class="text-muted text-small" style="margin-bottom:0">Bij <strong>Bewerken</strong> kun je per bewoner een persoonlijk geluid instellen: dat speelt 2,5 seconde bij elke tik van die persoon. Een nieuwe bewoner begint op €0,00 en staat meteen op het turfscherm. Bewoners worden nooit verwijderd: als iemand vertrekt zet je hem of haar op vertrokken, zodat de geschiedenis klopt.</p>
     </section>
 
     {% for title, group_active in [('Op het turfscherm', True), ('Vertrokken', False)] %}
@@ -37,6 +38,7 @@
             <form method="POST" class="form-row">{{ csrf() }}
               <input type="hidden" name="action" value="edit"><input type="hidden" name="user_id" value="{{ user.id }}">
               <label class="field"><span>Naam</span><input name="name" value="{{ user.name }}" class="input"></label>
+              <label class="field" style="min-width:220px"><span>Persoonlijk geluid (optioneel)</span><input name="sound_url" value="{{ user.sound_url or '' }}" list="geluiden" placeholder="bijv. luis" class="input"></label>
               <label class="check"><input type="checkbox" name="participates_in_ho" {% if user.participates_in_ho %}checked{% endif %}> Doet mee aan HO</label>
               <button class="btn btn-primary">Opslaan</button>
             </form>
