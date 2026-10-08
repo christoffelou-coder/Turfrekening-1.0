@@ -1,3 +1,4 @@
+import mimetypes
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_wtf.csrf import CSRFProtect, CSRFError
@@ -23,6 +24,7 @@ from periods import (PeriodError, check_period_dates, close_blockers, close_peri
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+mimetypes.add_type("audio/mp4", ".m4a")  # Safari/iPad is kieskeurig over het audiotype
 SOUNDS_DIR = os.path.join(BASE_DIR, "static", "sounds")
 SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a")
 

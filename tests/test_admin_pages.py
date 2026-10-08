@@ -141,3 +141,13 @@ def test_persoonlijk_geluid_voor_bewoner(admin, basis):
     db.session.refresh(luis)
     assert luis.sound_url is None
     assert "data-sound" not in admin.get("/").get_data(as_text=True).split('data-name="B"')[0].split('data-name="A"')[1]
+
+
+def test_geluid_luis_beschikbaar_en_wordt_geserveerd(admin, basis):
+    luis = basis["users"][0]
+    admin.post("/admin/users", data={"action": "edit", "user_id": luis.id, "name": luis.name, "sound_url": "luis"})
+    db.session.refresh(luis)
+    assert luis.sound_url == "luis"
+    assert 'data-name="A" data-sound="/static/sounds/luis.m4a"' in admin.get("/").get_data(as_text=True)
+    r = admin.get("/static/sounds/luis.m4a")
+    assert r.status_code == 200 and r.mimetype == "audio/mp4" and len(r.data) > 10000
