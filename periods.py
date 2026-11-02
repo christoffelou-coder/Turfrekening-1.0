@@ -49,6 +49,7 @@ def get_period_view(period_id):
         if report:
             ov = revive(report.data)
             ov["state"] = "closed"
+            ov["period"]["name"] = period.name  # alleen de naam volgt een hernoeming; de cijfers blijven bevroren
             return ov
     ov = compute_period(period_id)
     ov["state"] = "open" if period.is_active else "historic"

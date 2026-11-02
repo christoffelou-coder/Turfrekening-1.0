@@ -115,3 +115,35 @@ def test_afsluitpagina_werkt_bij_startdatum_in_de_toekomst(admin, basis):
     db.session.commit()
     r = admin.get("/admin/periods/close")
     assert r.status_code == 200 and "toekomst" in r.get_data(as_text=True)
+
+
+def test_naam_aanpassen_ook_van_afgesloten_periode(admin, basis):
+    vul(basis)
+    oud_id = basis["period"].id
+    admin.post("/admin/periods/close", data={"end_date": "2026-10-31", "next_name": "Nov", "next_start": "2026-10-31", "confirm": "on"})
+    voor = admin.get(f"/rapport/{oud_id}").get_data(as_text=True)
+    assert "Test" in voor
+
+    r = admin.post("/admin/periods", data={"action": "rename", "period_id": oud_id, "name": "Turfrekening oktober 2026"})
+    assert r.status_code == 302
+    assert db.session.get(Period, oud_id).name == "Turfrekening oktober 2026"
+
+    na = admin.get(f"/rapport/{oud_id}").get_data(as_text=True)
+    assert "Turfrekening oktober 2026" in na and "Afgesloten op" in na
+    # de bevroren cijfers zijn onveranderd (alleen naam verschilt)
+    from periods import get_period_view
+    view = get_period_view(oud_id)
+    assert view["state"] == "closed" and view["period"]["name"] == "Turfrekening oktober 2026"
+    assert PeriodReport.query.count() == 1
+
+
+def test_naam_aanpassen_valideert(admin, basis):
+    pid = basis["period"].id
+    admin.post("/admin/periods", data={"action": "rename", "period_id": pid, "name": "   "})
+    admin.post("/admin/periods", data={"action": "rename", "period_id": pid, "name": "x" * 101})
+    assert db.session.get(Period, pid).name == "Test"
+
+
+def test_naam_aanpassen_knop_in_lijst(admin, basis):
+    html = admin.get("/admin/periods").get_data(as_text=True)
+    assert 'value="rename"' in html and "Naam aanpassen" in html

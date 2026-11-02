@@ -282,3 +282,6 @@ details.edit[open] > summary { margin-bottom: var(--space-3); }
 .chart .bar.empty { fill: var(--border); }
 .chart .bar.sel { fill: var(--text); }
 .readout { min-height: 24px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+details.rename > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+details.rename > summary::-webkit-details-marker { display: none; }

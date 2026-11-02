@@ -451,6 +451,18 @@ def admin_periods():
             for w in warnings:
                 flash(w, "error")
             flash("Periode aangemaakt.", "success")
+        elif action == "rename":
+            period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
+            name = request.form.get("name", "").strip()
+            if not period:
+                raise FormError("Periode niet gevonden.")
+            if not name:
+                raise FormError("Naam: vul een naam in.")
+            if len(name) > 100:
+                raise FormError("Naam: maximaal 100 tekens.")
+            period.name = name
+            db.session.commit()
+            flash(f"Naam aangepast naar '{name}'.", "success")
         elif action == "edit":
             period = db.session.get(Period, parse_int(request.form.get("period_id"), "Periode"))
             if period and period.is_active and not period.closed_at:

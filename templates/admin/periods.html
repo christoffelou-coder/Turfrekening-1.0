@@ -52,7 +52,16 @@
         <thead><tr><th>Naam</th><th>Van</th><th>Tot</th><th>Status</th><th></th></tr></thead>
         <tbody>{% for p in periods %}
           <tr>
-            <td class="strong">{{ p.name }}</td>
+            <td>
+              <details class="rename">
+                <summary><span class="strong">{{ p.name }}</span> <span class="btn btn-small">Naam aanpassen</span></summary>
+                <form method="POST" class="form-row" style="margin-top:var(--space-2)">{{ csrf() }}
+                  <input type="hidden" name="action" value="rename"><input type="hidden" name="period_id" value="{{ p.id }}">
+                  <input name="name" value="{{ p.name }}" maxlength="100" required class="input" style="min-width:260px" aria-label="Nieuwe naam">
+                  <button class="btn btn-primary btn-small">Opslaan</button>
+                </form>
+              </details>
+            </td>
             <td>{{ p.start_date.strftime('%d-%m-%Y') }}</td>
             <td>{{ p.end_date.strftime('%d-%m-%Y') if p.end_date else '—' }}</td>
             <td>{% if p.is_active %}<span class="badge badge-accent">Lopend</span>
