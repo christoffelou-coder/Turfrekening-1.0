@@ -146,4 +146,15 @@ def test_naam_aanpassen_valideert(admin, basis):
 
 def test_naam_aanpassen_knop_in_lijst(admin, basis):
     html = admin.get("/admin/periods").get_data(as_text=True)
-    assert 'value="rename"' in html and "Naam aanpassen" in html
+    # de lopende periode heeft geen eigen invoerveld; één knop boven de lijst
+    assert "Namen aanpassen" in html and 'id="editNames"' in html
+    assert html.count('value="rename"') == 0
+
+
+def test_namen_aanpassen_formulier_voor_niet_lopende_periodes(admin, basis):
+    from datetime import date
+    oud = Period(name="Oud", start_date=date(2026, 9, 1), end_date=date(2026, 9, 30), is_active=False)
+    db.session.add(oud); db.session.commit()
+    html = admin.get("/admin/periods").get_data(as_text=True)
+    assert html.count('value="rename"') == 1          # alleen de niet-lopende periode
+    assert f'name="period_id" value="{oud.id}"' in html

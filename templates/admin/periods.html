@@ -46,21 +46,26 @@
     </section>
     {% endif %}
 
-    <section class="card">
-      <h2>Alle periodes</h2>
+    <section class="card" id="periodList">
+      <div class="row" style="justify-content:space-between; margin-bottom:var(--space-3);">
+        <h2 style="margin:0">Alle periodes</h2>
+        <button type="button" class="btn btn-small" id="editNames" aria-pressed="false">Namen aanpassen</button>
+      </div>
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Naam</th><th>Van</th><th>Tot</th><th>Status</th><th></th></tr></thead>
         <tbody>{% for p in periods %}
           <tr>
             <td>
-              <details class="rename">
-                <summary><span class="strong">{{ p.name }}</span> <span class="btn btn-small">Naam aanpassen</span></summary>
-                <form method="POST" class="form-row" style="margin-top:var(--space-2)">{{ csrf() }}
-                  <input type="hidden" name="action" value="rename"><input type="hidden" name="period_id" value="{{ p.id }}">
-                  <input name="name" value="{{ p.name }}" maxlength="100" required class="input" style="min-width:260px" aria-label="Nieuwe naam">
-                  <button class="btn btn-primary btn-small">Opslaan</button>
-                </form>
-              </details>
+              {% if p.is_active %}
+              <span class="strong">{{ p.name }}</span>
+              {% else %}
+              <span class="strong name-text">{{ p.name }}</span>
+              <form method="POST" class="name-form hidden">{{ csrf() }}
+                <input type="hidden" name="action" value="rename"><input type="hidden" name="period_id" value="{{ p.id }}">
+                <input name="name" value="{{ p.name }}" maxlength="100" required class="input" style="min-width:260px; min-height:36px" aria-label="Nieuwe naam voor {{ p.name }}">
+                <button class="btn btn-primary btn-small">Opslaan</button>
+              </form>
+              {% endif %}
             </td>
             <td>{{ p.start_date.strftime('%d-%m-%Y') }}</td>
             <td>{{ p.end_date.strftime('%d-%m-%Y') if p.end_date else '—' }}</td>
@@ -78,8 +83,23 @@
           </tr>
         {% endfor %}</tbody>
       </table></div>
-      <p class="text-faint text-tiny" style="margin-bottom:0">Afgesloten periodes zijn bevroren: het rapport verandert niet meer, wat je daarna ook aanpast. "Historisch" betekent dat de periode vóór deze werkwijze is afgesloten en nog uit actuele gegevens wordt getoond.</p>
+      <p class="text-faint text-tiny" style="margin-bottom:0">Met <strong>Namen aanpassen</strong> kun je de naam van elke periode die niet loopt wijzigen; de naam van de lopende periode pas je hierboven aan. Afgesloten periodes zijn bevroren: het rapport verandert niet meer, wat je daarna ook aanpast. "Historisch" betekent dat de periode vóór deze werkwijze is afgesloten en nog uit actuele gegevens wordt getoond.</p>
     </section>
   </div>
 </div>
+<script>
+(function () {
+  const btn = document.getElementById('editNames'), card = document.getElementById('periodList');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    btn.setAttribute('aria-pressed', on);
+    btn.textContent = on ? 'Klaar' : 'Namen aanpassen';
+    btn.classList.toggle('btn-primary', on);
+    card.querySelectorAll('.name-text').forEach(el => el.classList.toggle('hidden', on));
+    card.querySelectorAll('.name-form').forEach(el => el.classList.toggle('hidden', !on));
+    if (on) { const first = card.querySelector('.name-form input[name=name]'); if (first) first.focus(); }
+  });
+})();
+</script>
 {% endblock %}
